@@ -35,6 +35,8 @@ enum Commands {
         /// Class ID to book
         class_id: u64,
     },
+    /// Show your booked and waitlisted classes
+    Bookings,
     /// Run the scheduler to auto-book configured classes
     Schedule,
     /// Test login credentials
@@ -84,6 +86,33 @@ async fn main() -> Result<()> {
             let client = client.login().await?;
             let result = client.book_class(class_id).await?;
             info!("Booked: {} at {}", result.name, result.start_time);
+        }
+        Commands::Bookings => {
+            info!("Fetching your bookings...");
+            let client = client.login().await?;
+            let bookings = client.get_my_bookings().await?;
+
+            if bookings.is_empty() {
+                println!("\nNo current bookings found.");
+            } else {
+                println!("\n{:<8} {:<30} {:<20} {:<12} {:<10}", "ID", "Name", "Time", "Status", "Waitlist");
+                println!("{}", "-".repeat(82));
+
+                for booking in bookings {
+                    let waitlist = match booking.waitlist_position {
+                        Some(pos) => format!("#{}", pos),
+                        None => "-".to_string(),
+                    };
+                    println!(
+                        "{:<8} {:<30} {:<20} {:<12} {:<10}",
+                        booking.id,
+                        truncate(&booking.name, 28),
+                        booking.start_time.format("%a %d %b %H:%M"),
+                        booking.status,
+                        waitlist
+                    );
+                }
+            }
         }
         Commands::Schedule => {
             info!("Starting scheduler...");

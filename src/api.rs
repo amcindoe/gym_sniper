@@ -133,6 +133,46 @@ pub struct BookingResult {
     pub trainer: Option<String>,
 }
 
+// Class details response structures
+#[derive(Debug, Deserialize)]
+struct ClassDetailsResponse {
+    #[serde(rename = "Id")]
+    id: u64,
+    #[serde(rename = "Name")]
+    name: String,
+    #[serde(rename = "Status")]
+    status: String,
+    #[serde(rename = "StartTime")]
+    start_time: String,
+    #[serde(rename = "Users")]
+    users: Vec<ClassUser>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClassUser {
+    #[serde(rename = "Status")]
+    status: String,
+    #[serde(rename = "StandByQueueNumber")]
+    standby_queue_number: Option<u32>,
+    #[serde(rename = "User")]
+    user: ClassUserInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClassUserInfo {
+    #[serde(rename = "IsCurrentUser")]
+    is_current_user: bool,
+}
+
+#[derive(Debug)]
+pub struct MyBooking {
+    pub id: u64,
+    pub name: String,
+    pub start_time: DateTime<Local>,
+    pub status: String,
+    pub waitlist_position: Option<u32>,
+}
+
 impl PerfectGymClient {
     pub fn new(config: &Config) -> Self {
         let client = Client::builder()
@@ -318,6 +358,75 @@ impl PerfectGymClient {
             start_time,
             trainer: ticket.trainer,
         })
+    }
+
+    pub async fn get_class_details(&self, class_id: u64) -> Result<MyBooking> {
+        let url = format!(
+            "{}/Classes/ClassCalendar/Details?classId={}",
+            self.config.gym.base_url, class_id
+        );
+
+        let token = self.token.read().await;
+        let token = token
+            .as_ref()
+            .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))?;
+
+        let response = self
+            .client
+            .get(&url)
+            .header(header::AUTHORIZATION, format!("Bearer {}", token))
+            .header(header::ACCEPT, "application/json, text/plain, */*")
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("CP-LANG", "en")
+            .header("CP-MODE", "desktop")
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(GymSniperError::Api(format!(
+                "Failed to get class details: {}",
+                response.status()
+            )));
+        }
+
+        let details: ClassDetailsResponse = response.json().await?;
+
+        let start_time = NaiveDateTime::parse_from_str(&details.start_time, "%Y-%m-%dT%H:%M:%S")
+            .map_err(|e| GymSniperError::Api(format!("Failed to parse time: {}", e)))?
+            .and_local_timezone(Local)
+            .single()
+            .ok_or_else(|| GymSniperError::Api("Invalid timezone".to_string()))?;
+
+        // Find current user's waitlist position
+        let waitlist_position = details
+            .users
+            .iter()
+            .find(|u| u.user.is_current_user)
+            .and_then(|u| u.standby_queue_number);
+
+        Ok(MyBooking {
+            id: details.id,
+            name: details.name,
+            start_time,
+            status: details.status,
+            waitlist_position,
+        })
+    }
+
+    pub async fn get_my_bookings(&self) -> Result<Vec<MyBooking>> {
+        let classes = self.get_weekly_classes(14).await?;
+        let mut bookings = Vec::new();
+
+        for class in classes {
+            if class.status == "Booked" || class.status == "Awaiting" {
+                match self.get_class_details(class.id).await {
+                    Ok(booking) => bookings.push(booking),
+                    Err(_) => continue,
+                }
+            }
+        }
+
+        Ok(bookings)
     }
 }
 

@@ -11,6 +11,7 @@ Popular gym classes fill up within seconds of the booking window opening. The bo
 - **Login** - Test your credentials
 - **List** - View available classes with their booking status
 - **Book** - Book a specific class by ID
+- **Bookings** - View your booked classes and waitlist positions
 - **Schedule** - Run continuously and auto-book configured classes when the window opens
 
 ## Installation
@@ -98,6 +99,21 @@ Output shows:
 
 ```bash
 ./target/release/gym_sniper book 75738
+```
+
+### View Your Bookings
+
+```bash
+./target/release/gym_sniper bookings
+```
+
+Shows your booked and waitlisted classes with waitlist position:
+
+```
+ID       Name                           Time                 Status       Waitlist
+----------------------------------------------------------------------------------
+75789    Pilates Matwork                Tue 03 Feb 10:30     Awaitable    #8
+75813    Vinyasa/Flow Yoga              Wed 04 Feb 08:00     Booked       -
 ```
 
 ### Run Auto-Scheduler
