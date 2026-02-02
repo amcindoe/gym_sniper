@@ -12,6 +12,7 @@ Popular gym classes fill up within seconds of the booking window opening. The bo
 - **List** - View available classes with their booking status
 - **Book** - Book a specific class by ID
 - **Bookings** - View your booked classes and waitlist positions
+- **Snipe** - Wait for booking window and aggressively book a specific class
 - **Schedule** - Run continuously and auto-book configured classes when the window opens
 
 ## Installation
@@ -114,6 +115,24 @@ ID       Name                           Time                 Status       Waitli
 ----------------------------------------------------------------------------------
 75789    Pilates Matwork                Tue 03 Feb 10:30     Awaitable    #8
 75813    Vinyasa/Flow Yoga              Wed 04 Feb 08:00     Booked       -
+```
+
+### Snipe a Class
+
+For high-demand classes, use snipe mode to book the instant the window opens:
+
+```bash
+./target/release/gym_sniper snipe 76014
+```
+
+The sniper will:
+1. Wait until 1 minute before the booking window opens
+2. Start attempting to book every 100ms
+3. Keep trying until successful (or max 3000 attempts)
+
+Run in background:
+```bash
+nohup ./target/release/gym_sniper snipe 76014 > snipe.log 2>&1 &
 ```
 
 ### Run Auto-Scheduler

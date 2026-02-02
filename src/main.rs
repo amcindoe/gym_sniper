@@ -37,6 +37,11 @@ enum Commands {
     },
     /// Show your booked and waitlisted classes
     Bookings,
+    /// Snipe a class - wait for booking window and book immediately
+    Snipe {
+        /// Class ID to snipe
+        class_id: u64,
+    },
     /// Run the scheduler to auto-book configured classes
     Schedule,
     /// Test login credentials
@@ -114,6 +119,11 @@ async fn main() -> Result<()> {
                 }
             }
         }
+        Commands::Snipe { class_id } => {
+            info!("Sniping class {}...", class_id);
+            let client = client.login().await?;
+            snipe_class(&client, class_id).await?;
+        }
         Commands::Schedule => {
             info!("Starting scheduler...");
             run_scheduler(config, client).await?;
@@ -121,6 +131,103 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn snipe_class(client: &api::PerfectGymClient, class_id: u64) -> Result<()> {
+    use chrono::{Duration, Local};
+    use tokio::time::sleep;
+
+    // Get class details to find when booking opens
+    let booking = client.get_class_details(class_id).await?;
+    let class_time = booking.start_time;
+    let booking_opens = class_time - Duration::days(7) - Duration::hours(2);
+
+    info!(
+        "Target: {} at {}",
+        booking.name,
+        class_time.format("%a %d %b %H:%M")
+    );
+    info!(
+        "Booking window opens: {}",
+        booking_opens.format("%a %d %b %H:%M:%S")
+    );
+
+    // Wait until 1 minute before booking window opens
+    loop {
+        let now = Local::now();
+        let wait_until = booking_opens - Duration::minutes(1);
+        let time_to_wait = wait_until.signed_duration_since(now);
+
+        if time_to_wait.num_seconds() <= 0 {
+            break;
+        }
+
+        info!(
+            "Waiting {} until snipe starts (1 min before window)...",
+            format_duration(time_to_wait)
+        );
+
+        // Sleep in chunks so we can show progress
+        let sleep_secs = time_to_wait.num_seconds().min(60) as u64;
+        sleep(std::time::Duration::from_secs(sleep_secs)).await;
+    }
+
+    info!("Starting snipe attempts...");
+
+    // Now try every 100ms until successful
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        let now = Local::now();
+
+        match client.book_class(class_id).await {
+            Ok(result) => {
+                info!(
+                    "SUCCESS! Booked {} at {} (attempt #{})",
+                    result.name,
+                    result.start_time.format("%a %d %b %H:%M"),
+                    attempts
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                let err_str = format!("{}", e);
+                if err_str.contains("TooSoonToBook") {
+                    if attempts % 10 == 1 {
+                        info!("Attempt #{}: Window not open yet, retrying...", attempts);
+                    }
+                } else if err_str.contains("already") || err_str.contains("Already") {
+                    info!("Already booked or on waitlist!");
+                    return Ok(());
+                } else {
+                    error!("Attempt #{}: {}", attempts, e);
+                }
+            }
+        }
+
+        // Stop after 5 minutes of trying
+        if attempts > 3000 {
+            error!("Gave up after {} attempts", attempts);
+            return Err(crate::error::GymSniperError::Api("Max attempts reached".to_string()));
+        }
+
+        sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+fn format_duration(d: chrono::Duration) -> String {
+    let total_secs = d.num_seconds();
+    let hours = total_secs / 3600;
+    let mins = (total_secs % 3600) / 60;
+    let secs = total_secs % 60;
+
+    if hours > 0 {
+        format!("{}h {}m {}s", hours, mins, secs)
+    } else if mins > 0 {
+        format!("{}m {}s", mins, secs)
+    } else {
+        format!("{}s", secs)
+    }
 }
 
 async fn run_scheduler(config: Config, client: PerfectGymClient) -> Result<()> {
