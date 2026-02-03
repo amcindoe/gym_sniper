@@ -165,18 +165,17 @@ For high-demand classes, use snipe mode to book the instant the window opens:
 The sniper uses a **polling-based approach** to detect exactly when a class becomes bookable:
 
 1. Display target class and estimated booking window
-2. Poll the class status at adaptive intervals:
-   - Every 60s when >30 min from estimated window
+2. If window is more than 30 minutes away, sleep (no API calls) until 30 min before
+3. Refresh login token and start polling at adaptive intervals:
    - Every 30s when 5-30 min away
    - Every 10s when 1-5 min away
    - Every 2s when <1 min away or past estimated time
-3. Refresh login token 10 minutes before window opens (ready to book instantly)
-4. When status changes to "Bookable", immediately start booking attempts
-5. Attempt to book with random delays (200-500ms) to appear human-like
+4. Refresh token again 10 minutes before window opens
+5. When status changes to "Bookable", immediately start booking attempts
 6. Stop immediately on permanent failures (e.g., daily booking limit reached)
 7. If class is full, attempt to join waitlist then stop
 
-This approach is more reliable than calculated timing because it detects the actual API status change rather than estimating when the window opens.
+This is efficient for overnight sniping - it won't make API calls until close to the booking window.
 
 Run in background (for overnight waits):
 ```bash

@@ -214,10 +214,45 @@ async fn snipe_class(config: &Config, client: &api::PerfectGymClient, class_id: 
         return Ok(());
     }
 
-    info!("Polling for status change (currently: {})...", booking.status);
+    // If more than 30 minutes until window, sleep without polling to save API calls
+    let now = Local::now();
+    let time_until_estimated = estimated_booking_opens.signed_duration_since(now);
+    let polling_start = estimated_booking_opens - Duration::minutes(30);
+
+    if time_until_estimated.num_minutes() > 30 {
+        let sleep_until = polling_start.signed_duration_since(now);
+        info!(
+            "Booking window in {}. Sleeping until {} (30 min before window)...",
+            format_duration(time_until_estimated),
+            polling_start.format("%a %d %b %H:%M:%S")
+        );
+
+        // Sleep in chunks to show progress and handle interrupts
+        let total_sleep_secs = sleep_until.num_seconds().max(0) as u64;
+        let mut slept_secs = 0u64;
+
+        while slept_secs < total_sleep_secs {
+            let remaining = total_sleep_secs - slept_secs;
+            let chunk = remaining.min(3600); // Sleep max 1 hour at a time
+            sleep(std::time::Duration::from_secs(chunk)).await;
+            slept_secs += chunk;
+
+            if remaining > 3600 {
+                let hours_left = (remaining - chunk) / 3600;
+                let mins_left = ((remaining - chunk) % 3600) / 60;
+                info!("Still waiting... {}h {}m until polling starts", hours_left, mins_left);
+            }
+        }
+
+        info!("Waking up, refreshing login token...");
+    }
+
+    // Fresh login before starting to poll
+    let mut client = PerfectGymClient::new(config).login().await?;
+    info!("Token refreshed, starting to poll...");
+
     let mut last_status = booking.status;
     let mut poll_count = 0;
-    let mut client = client.clone();
 
     loop {
         poll_count += 1;
