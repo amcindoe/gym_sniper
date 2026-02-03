@@ -6,6 +6,16 @@ club_id = 2
 email = "your-email@example.com"
 password = "your-password"
 
+# Email notifications (optional)
+# Sends email on successful booking or failure
+[email]
+smtp_server = "smtp.gmail.com"
+smtp_port = 587
+username = "your-email@gmail.com"
+password = "your-app-password"
+from = "Gym Sniper <your-email@gmail.com>"
+to = "your-email@gmail.com"
+
 # Classes to auto-book when running in schedule mode
 # You can add multiple [[targets]] sections
 

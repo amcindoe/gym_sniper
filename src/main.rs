@@ -1,5 +1,6 @@
 mod api;
 mod config;
+mod email;
 mod error;
 
 use chrono::{Datelike, Weekday};
@@ -322,6 +323,12 @@ async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
     info!("Refreshing login token for booking...");
     let client = PerfectGymClient::new(config).login().await?;
 
+    // Get class details for email notifications
+    let class_details = client.get_class_details(class_id).await.ok();
+    let class_name = class_details.as_ref().map(|d| d.name.as_str()).unwrap_or("Unknown");
+    let class_time = class_details.as_ref().map(|d| d.start_time.format("%a %d %b %H:%M").to_string()).unwrap_or_default();
+    let class_trainer = class_details.as_ref().and_then(|d| d.trainer.as_deref());
+
     let mut rng = rand::thread_rng();
     let mut attempts = 0;
 
@@ -336,6 +343,13 @@ async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
                     result.start_time.format("%a %d %b %H:%M"),
                     attempts
                 );
+
+                // Send success email
+                if let Some(email_config) = &config.email {
+                    let time_str = result.start_time.format("%a %d %b %H:%M").to_string();
+                    email::send_booking_success(email_config, &result.name, &time_str, class_trainer).await;
+                }
+
                 return Ok(());
             }
             Err(e) => {
@@ -359,6 +373,18 @@ async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
         // Stop after ~10 minutes of trying (with random delays, ~1500 attempts)
         if attempts > 1500 {
             error!("Gave up after {} attempts", attempts);
+
+            // Send failure email
+            if let Some(email_config) = &config.email {
+                email::send_booking_failure(
+                    email_config,
+                    class_name,
+                    &class_time,
+                    class_trainer,
+                    "Max booking attempts reached",
+                ).await;
+            }
+
             return Err(crate::error::GymSniperError::Api("Max attempts reached".to_string()));
         }
 
@@ -419,8 +445,20 @@ async fn run_scheduler(config: Config, client: PerfectGymClient) -> Result<()> {
                     if time_until_booking.num_seconds() <= 0 {
                         info!("Booking window open for {} at {}", class.name, class_time);
                         match client.book_class(class.id).await {
-                            Ok(result) => info!("Successfully booked: {}", result.name),
-                            Err(e) => error!("Failed to book: {}", e),
+                            Ok(result) => {
+                                info!("Successfully booked: {}", result.name);
+                                if let Some(email_config) = &config.email {
+                                    let time_str = result.start_time.format("%a %d %b %H:%M").to_string();
+                                    email::send_booking_success(email_config, &result.name, &time_str, class.trainer.as_deref()).await;
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to book: {}", e);
+                                if let Some(email_config) = &config.email {
+                                    let time_str = class_time.format("%a %d %b %H:%M").to_string();
+                                    email::send_booking_failure(email_config, &class.name, &time_str, class.trainer.as_deref(), &format!("{}", e)).await;
+                                }
+                            }
                         }
                     } else if time_until_booking.num_minutes() <= 5 {
                         info!(
@@ -437,8 +475,20 @@ async fn run_scheduler(config: Config, client: PerfectGymClient) -> Result<()> {
 
                         // Try to book immediately
                         match client.book_class(class.id).await {
-                            Ok(result) => info!("Successfully booked: {}", result.name),
-                            Err(e) => error!("Failed to book: {}", e),
+                            Ok(result) => {
+                                info!("Successfully booked: {}", result.name);
+                                if let Some(email_config) = &config.email {
+                                    let time_str = result.start_time.format("%a %d %b %H:%M").to_string();
+                                    email::send_booking_success(email_config, &result.name, &time_str, class.trainer.as_deref()).await;
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to book: {}", e);
+                                if let Some(email_config) = &config.email {
+                                    let time_str = class_time.format("%a %d %b %H:%M").to_string();
+                                    email::send_booking_failure(email_config, &class.name, &time_str, class.trainer.as_deref(), &format!("{}", e)).await;
+                                }
+                            }
                         }
                     }
                 }

@@ -9,6 +9,17 @@ pub struct Config {
     pub credentials: Credentials,
     #[serde(default)]
     pub targets: Vec<ClassTarget>,
+    pub email: Option<EmailConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct EmailConfig {
+    pub smtp_server: String,
+    pub smtp_port: u16,
+    pub username: String,
+    pub password: String,
+    pub from: String,
+    pub to: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]

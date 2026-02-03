@@ -63,6 +63,29 @@ class_name = "Yoga"
 | `days` | No | List of days: "Monday", "Tuesday", etc. |
 | `time` | No | Specific time in HH:MM format |
 
+### Email Notifications (Optional)
+
+Get notified when a class is booked or when booking fails:
+
+```toml
+[email]
+smtp_server = "smtp.gmail.com"
+smtp_port = 587
+username = "your-email@gmail.com"
+password = "your-app-password"
+from = "Gym Sniper <your-email@gmail.com>"
+to = "your-email@gmail.com"
+```
+
+**Gmail users:** You need to create an [App Password](https://support.google.com/accounts/answer/185833) (not your regular password).
+
+**Other providers:**
+| Provider | SMTP Server | Port |
+|----------|-------------|------|
+| Gmail | smtp.gmail.com | 587 |
+| Outlook | smtp.office365.com | 587 |
+| Yahoo | smtp.mail.yahoo.com | 587 |
+
 ## Usage
 
 ### Test Login
