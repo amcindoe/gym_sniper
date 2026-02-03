@@ -144,6 +144,8 @@ struct ClassDetailsResponse {
     status: String,
     #[serde(rename = "StartTime")]
     start_time: String,
+    #[serde(rename = "Trainer")]
+    trainer: Option<String>,
     #[serde(rename = "Users")]
     users: Vec<ClassUser>,
 }
@@ -171,6 +173,7 @@ pub struct MyBooking {
     pub start_time: DateTime<Local>,
     pub status: String,
     pub waitlist_position: Option<u32>,
+    pub trainer: Option<String>,
 }
 
 // Browser-like headers to appear more natural
@@ -438,6 +441,7 @@ impl PerfectGymClient {
             start_time,
             status: details.status,
             waitlist_position,
+            trainer: details.trainer,
         })
     }
 

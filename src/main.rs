@@ -102,21 +102,23 @@ async fn main() -> Result<()> {
             if bookings.is_empty() {
                 println!("\nNo current bookings found.");
             } else {
-                println!("\n{:<8} {:<30} {:<20} {:<12} {:<10}", "ID", "Name", "Time", "Status", "Waitlist");
-                println!("{}", "-".repeat(82));
+                println!("\n{:<8} {:<30} {:<20} {:<12} {:<10} {:<15}", "ID", "Name", "Time", "Status", "Waitlist", "Trainer");
+                println!("{}", "-".repeat(97));
 
                 for booking in bookings {
                     let waitlist = match booking.waitlist_position {
                         Some(pos) => format!("#{}", pos),
                         None => "-".to_string(),
                     };
+                    let trainer = booking.trainer.as_deref().unwrap_or("-");
                     println!(
-                        "{:<8} {:<30} {:<20} {:<12} {:<10}",
+                        "{:<8} {:<30} {:<20} {:<12} {:<10} {:<15}",
                         booking.id,
                         truncate(&booking.name, 28),
                         booking.start_time.format("%a %d %b %H:%M"),
                         booking.status,
-                        waitlist
+                        waitlist,
+                        truncate(trainer, 13)
                     );
                 }
             }
