@@ -30,6 +30,14 @@ enum Commands {
         #[arg(short, long, default_value = "7")]
         days: u32,
     },
+    /// Search classes by trainer name
+    Trainer {
+        /// Trainer name to search for (partial match, case-insensitive)
+        name: String,
+        /// Number of days to search (default: 28)
+        #[arg(short, long, default_value = "28")]
+        days: u32,
+    },
     /// Book a specific class by ID
     Book {
         /// Class ID to book
@@ -73,19 +81,54 @@ async fn main() -> Result<()> {
             let client = client.login().await?;
             let classes = client.get_weekly_classes(days).await?;
 
-            println!("\n{:<8} {:<30} {:<20} {:<12} {:<20}", "ID", "Name", "Time", "Status", "Trainer");
-            println!("{}", "-".repeat(92));
+            println!("\n{:<8} {:<30} {:<15} {:<20} {:<12}", "ID", "Name", "Trainer", "Time", "Status");
+            println!("{}", "-".repeat(87));
 
             for class in classes {
                 let trainer = class.trainer.as_deref().unwrap_or("-");
                 println!(
-                    "{:<8} {:<30} {:<20} {:<12} {:<20}",
+                    "{:<8} {:<30} {:<15} {:<20} {:<12}",
                     class.id,
                     truncate(&class.name, 28),
+                    truncate(trainer, 13),
                     class.start_time.format("%a %d %b %H:%M"),
-                    class.status,
-                    truncate(trainer, 18)
+                    class.status
                 );
+            }
+        }
+        Commands::Trainer { name, days } => {
+            info!("Searching for trainer '{}' in next {} days...", name, days);
+            let client = client.login().await?;
+            let classes = client.get_weekly_classes(days).await?;
+
+            let search = name.to_lowercase();
+            let filtered: Vec<_> = classes
+                .into_iter()
+                .filter(|c| {
+                    c.trainer
+                        .as_ref()
+                        .map(|t| t.to_lowercase().contains(&search))
+                        .unwrap_or(false)
+                })
+                .collect();
+
+            if filtered.is_empty() {
+                println!("\nNo classes found for trainer matching '{}'", name);
+            } else {
+                println!("\n{:<8} {:<30} {:<15} {:<20} {:<12}", "ID", "Name", "Trainer", "Time", "Status");
+                println!("{}", "-".repeat(87));
+
+                for class in filtered {
+                    let trainer = class.trainer.as_deref().unwrap_or("-");
+                    println!(
+                        "{:<8} {:<30} {:<15} {:<20} {:<12}",
+                        class.id,
+                        truncate(&class.name, 28),
+                        truncate(trainer, 13),
+                        class.start_time.format("%a %d %b %H:%M"),
+                        class.status
+                    );
+                }
             }
         }
         Commands::Book { class_id } => {
@@ -102,7 +145,7 @@ async fn main() -> Result<()> {
             if bookings.is_empty() {
                 println!("\nNo current bookings found.");
             } else {
-                println!("\n{:<8} {:<30} {:<20} {:<12} {:<10} {:<15}", "ID", "Name", "Time", "Status", "Waitlist", "Trainer");
+                println!("\n{:<8} {:<30} {:<15} {:<20} {:<12} {:<10}", "ID", "Name", "Trainer", "Time", "Status", "Waitlist");
                 println!("{}", "-".repeat(97));
 
                 for booking in bookings {
@@ -112,13 +155,13 @@ async fn main() -> Result<()> {
                     };
                     let trainer = booking.trainer.as_deref().unwrap_or("-");
                     println!(
-                        "{:<8} {:<30} {:<20} {:<12} {:<10} {:<15}",
+                        "{:<8} {:<30} {:<15} {:<20} {:<12} {:<10}",
                         booking.id,
                         truncate(&booking.name, 28),
+                        truncate(trainer, 13),
                         booking.start_time.format("%a %d %b %H:%M"),
                         booking.status,
-                        waitlist,
-                        truncate(trainer, 13)
+                        waitlist
                     );
                 }
             }

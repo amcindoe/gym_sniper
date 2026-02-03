@@ -10,6 +10,7 @@ Popular gym classes fill up within seconds of the booking window opening. The bo
 
 - **Login** - Test your credentials
 - **List** - View available classes with their booking status
+- **Trainer** - Search classes by trainer name
 - **Book** - Book a specific class by ID
 - **Bookings** - View your booked classes and waitlist positions
 - **Snipe** - Wait for booking window and aggressively book a specific class
@@ -83,9 +84,9 @@ class_name = "Yoga"
 Output shows:
 - **ID** - Use this to book manually
 - **Name** - Class name
+- **Trainer** - Instructor name
 - **Time** - Day and time
 - **Status** - Booking availability
-- **Trainer** - Instructor name
 
 ### Class Statuses
 
@@ -96,6 +97,18 @@ Output shows:
 | Awaiting | You're on the waitlist |
 | Booked | You've booked this class |
 | Unavailable | Already started or ended |
+
+### Search by Trainer
+
+```bash
+# Search for classes by trainer (28 days by default)
+./target/release/gym_sniper trainer leona
+
+# Search with custom date range
+./target/release/gym_sniper trainer leona -d 14
+```
+
+The search is case-insensitive and matches partial names.
 
 ### Book a Class
 
@@ -112,10 +125,10 @@ Output shows:
 Shows your booked and waitlisted classes with waitlist position:
 
 ```
-ID       Name                           Time                 Status       Waitlist   Trainer
+ID       Name                           Trainer        Time                 Status       Waitlist
 -------------------------------------------------------------------------------------------------
-75789    Pilates Matwork                Tue 03 Feb 10:30     Awaiting     #8         Leonora
-75813    Vinyasa/Flow Yoga              Wed 04 Feb 08:00     Booked       -          Sarah
+75789    Pilates Matwork                Leonora        Tue 03 Feb 10:30     Awaiting     #8
+75813    Vinyasa/Flow Yoga              Sarah          Wed 04 Feb 08:00     Booked       -
 ```
 
 ### Snipe a Class

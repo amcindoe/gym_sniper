@@ -144,10 +144,16 @@ struct ClassDetailsResponse {
     status: String,
     #[serde(rename = "StartTime")]
     start_time: String,
-    #[serde(rename = "Trainer")]
-    trainer: Option<String>,
+    #[serde(rename = "TrainerDetails")]
+    trainer_details: Option<TrainerDetails>,
     #[serde(rename = "Users")]
     users: Vec<ClassUser>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TrainerDetails {
+    #[serde(rename = "Title")]
+    title: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -441,7 +447,7 @@ impl PerfectGymClient {
             start_time,
             status: details.status,
             waitlist_position,
-            trainer: details.trainer,
+            trainer: details.trainer_details.map(|t| t.title),
         })
     }
 
