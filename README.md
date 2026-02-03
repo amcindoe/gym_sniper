@@ -129,8 +129,8 @@ The sniper will:
 1. Display target class and when booking window opens
 2. Wait until 1 minute before the booking window opens
 3. Refresh login token (safe to run overnight)
-4. Attempt to book every 100ms until successful
-5. Stop after success or 3000 attempts (~5 minutes)
+4. Attempt to book with random delays (200-500ms) to appear human-like
+5. Stop after success or ~10 minutes of trying
 
 Run in background (for overnight waits):
 ```bash
@@ -201,6 +201,14 @@ Enable debug logging:
 ```bash
 RUST_LOG=gym_sniper=debug ./target/release/gym_sniper list
 ```
+
+## Technical Notes
+
+The tool interacts with the Perfect Gym API in a browser-like manner:
+
+- **Browser headers** - Sends User-Agent, Origin, Referer, Accept-Language
+- **Random delays** - 200-500ms between requests to appear human-like
+- **Session cookies** - Maintains cookies like a real browser session
 
 ## Security Note
 

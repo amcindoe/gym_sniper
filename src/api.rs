@@ -173,10 +173,18 @@ pub struct MyBooking {
     pub waitlist_position: Option<u32>,
 }
 
+// Browser-like headers to appear more natural
+const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64; rv:146.0) Gecko/20100101 Firefox/146.0";
+
 impl PerfectGymClient {
     pub fn new(config: &Config) -> Self {
+        let mut headers = header::HeaderMap::new();
+        headers.insert(header::USER_AGENT, USER_AGENT.parse().unwrap());
+        headers.insert(header::ACCEPT_LANGUAGE, "en-GB,en;q=0.5".parse().unwrap());
+
         let client = Client::builder()
             .cookie_store(true)
+            .default_headers(headers)
             .build()
             .expect("Failed to create HTTP client");
 
@@ -198,11 +206,16 @@ impl PerfectGymClient {
 
         debug!("Logging in to {}", url);
 
+        let origin = &self.config.gym.base_url.replace("/clientportal2", "");
+        let referer = format!("{}/", self.config.gym.base_url);
+
         let response = self
             .client
             .post(&url)
             .header(header::CONTENT_TYPE, "application/json;charset=utf-8")
             .header(header::ACCEPT, "application/json, text/plain, */*")
+            .header(header::ORIGIN, origin)
+            .header(header::REFERER, &referer)
             .header("X-Requested-With", "XMLHttpRequest")
             .header("CP-LANG", "en")
             .header("CP-MODE", "desktop")
@@ -260,12 +273,17 @@ impl PerfectGymClient {
             .as_ref()
             .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))?;
 
+        let origin = &self.config.gym.base_url.replace("/clientportal2", "");
+        let referer = format!("{}/", self.config.gym.base_url);
+
         let response = self
             .client
             .post(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
             .header(header::CONTENT_TYPE, "application/json;charset=utf-8")
             .header(header::ACCEPT, "application/json, text/plain, */*")
+            .header(header::ORIGIN, origin)
+            .header(header::REFERER, &referer)
             .header("X-Requested-With", "XMLHttpRequest")
             .header("CP-LANG", "en")
             .header("CP-MODE", "desktop")
@@ -317,12 +335,17 @@ impl PerfectGymClient {
             .as_ref()
             .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))?;
 
+        let origin = &self.config.gym.base_url.replace("/clientportal2", "");
+        let referer = format!("{}/", self.config.gym.base_url);
+
         let response = self
             .client
             .post(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
             .header(header::CONTENT_TYPE, "application/json;charset=utf-8")
             .header(header::ACCEPT, "application/json, text/plain, */*")
+            .header(header::ORIGIN, origin)
+            .header(header::REFERER, &referer)
             .header("X-Requested-With", "XMLHttpRequest")
             .header("CP-LANG", "en")
             .header("CP-MODE", "desktop")
@@ -371,11 +394,16 @@ impl PerfectGymClient {
             .as_ref()
             .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))?;
 
+        let origin = &self.config.gym.base_url.replace("/clientportal2", "");
+        let referer = format!("{}/", self.config.gym.base_url);
+
         let response = self
             .client
             .get(&url)
             .header(header::AUTHORIZATION, format!("Bearer {}", token))
             .header(header::ACCEPT, "application/json, text/plain, */*")
+            .header(header::ORIGIN, origin)
+            .header(header::REFERER, &referer)
             .header("X-Requested-With", "XMLHttpRequest")
             .header("CP-LANG", "en")
             .header("CP-MODE", "desktop")

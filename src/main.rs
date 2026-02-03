@@ -177,11 +177,13 @@ async fn snipe_class(config: &Config, client: &api::PerfectGymClient, class_id: 
     let client = PerfectGymClient::new(config).login().await?;
     info!("Login refreshed, starting snipe attempts...");
 
-    // Now try every 100ms until successful
+    // Try with random delays to appear more human-like
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
     let mut attempts = 0;
+
     loop {
         attempts += 1;
-        let now = Local::now();
 
         match client.book_class(class_id).await {
             Ok(result) => {
@@ -208,13 +210,15 @@ async fn snipe_class(config: &Config, client: &api::PerfectGymClient, class_id: 
             }
         }
 
-        // Stop after 5 minutes of trying
-        if attempts > 3000 {
+        // Stop after ~10 minutes of trying (with random delays, ~1500 attempts)
+        if attempts > 1500 {
             error!("Gave up after {} attempts", attempts);
             return Err(crate::error::GymSniperError::Api("Max attempts reached".to_string()));
         }
 
-        sleep(std::time::Duration::from_millis(100)).await;
+        // Random delay between 200-500ms to appear more human-like
+        let delay_ms = rng.gen_range(200..500);
+        sleep(std::time::Duration::from_millis(delay_ms)).await;
     }
 }
 
