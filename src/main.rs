@@ -240,7 +240,10 @@ async fn snipe_class(config: &Config, client: &api::PerfectGymClient, class_id: 
         };
 
         // Re-login periodically to keep token fresh (every ~30 minutes)
-        if poll_count % 30 == 0 && poll_interval_secs >= 60 {
+        // Also refresh 10 minutes before window opens to be ready
+        let should_refresh = (poll_count % 30 == 0 && poll_interval_secs >= 60)
+            || (time_until_estimated.num_seconds() > 590 && time_until_estimated.num_seconds() <= 600);
+        if should_refresh {
             info!("Refreshing login token...");
             client = PerfectGymClient::new(config).login().await?;
         }
@@ -319,8 +322,8 @@ async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
     use tokio::time::sleep;
     use rand::Rng;
 
-    // Fresh login for booking attempts
-    info!("Refreshing login token for booking...");
+    // Login token should already be fresh (refreshed 1 min before window)
+    // but refresh again just in case this is called directly
     let client = PerfectGymClient::new(config).login().await?;
 
     // Get class details for email notifications
@@ -354,6 +357,22 @@ async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
             }
             Err(e) => {
                 let err_str = format!("{}", e);
+
+                // Permanent failures - stop immediately
+                if err_str.contains("DailyBookingLimitReached") {
+                    error!("Daily booking limit reached - cannot book another class today");
+                    if let Some(email_config) = &config.email {
+                        email::send_booking_failure(
+                            email_config,
+                            class_name,
+                            &class_time,
+                            class_trainer,
+                            "Daily booking limit reached - you already have a class booked on this day",
+                        ).await;
+                    }
+                    return Err(crate::error::GymSniperError::Api("Daily booking limit reached".to_string()));
+                }
+
                 if err_str.contains("TooSoonToBook") {
                     if attempts % 10 == 1 {
                         info!("Attempt #{}: Window not open yet, retrying...", attempts);
@@ -361,11 +380,29 @@ async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
                 } else if err_str.contains("already") || err_str.contains("Already") {
                     info!("Already booked or on waitlist!");
                     return Ok(());
-                } else if err_str.contains("Full") || err_str.contains("full") {
-                    info!("Class is full, joining waitlist...");
-                    // Continue trying - the book endpoint may add to waitlist
+                } else if err_str.contains("Full") || err_str.contains("full") || err_str.contains("Awaitable") {
+                    // Class is full - try to join waitlist then stop
+                    info!("Class is full, attempting to join waitlist...");
+                    // The API should add us to waitlist, stop after a few more tries
+                    if attempts >= 5 {
+                        info!("Joined waitlist (or waitlist full)");
+                        return Ok(());
+                    }
                 } else {
                     error!("Attempt #{}: {}", attempts, e);
+                    // Unknown error - might be permanent, stop after a few tries
+                    if attempts >= 10 {
+                        if let Some(email_config) = &config.email {
+                            email::send_booking_failure(
+                                email_config,
+                                class_name,
+                                &class_time,
+                                class_trainer,
+                                &err_str,
+                            ).await;
+                        }
+                        return Err(e);
+                    }
                 }
             }
         }

@@ -170,10 +170,11 @@ The sniper uses a **polling-based approach** to detect exactly when a class beco
    - Every 30s when 5-30 min away
    - Every 10s when 1-5 min away
    - Every 2s when <1 min away or past estimated time
-3. Automatically refresh login token periodically (safe to run overnight)
+3. Refresh login token 10 minutes before window opens (ready to book instantly)
 4. When status changes to "Bookable", immediately start booking attempts
 5. Attempt to book with random delays (200-500ms) to appear human-like
-6. Stop after success or ~10 minutes of trying
+6. Stop immediately on permanent failures (e.g., daily booking limit reached)
+7. If class is full, attempt to join waitlist then stop
 
 This approach is more reliable than calculated timing because it detects the actual API status change rather than estimating when the window opens.
 
