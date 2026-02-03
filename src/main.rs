@@ -122,7 +122,7 @@ async fn main() -> Result<()> {
         Commands::Snipe { class_id } => {
             info!("Sniping class {}...", class_id);
             let client = client.login().await?;
-            snipe_class(&client, class_id).await?;
+            snipe_class(&config, &client, class_id).await?;
         }
         Commands::Schedule => {
             info!("Starting scheduler...");
@@ -133,7 +133,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn snipe_class(client: &api::PerfectGymClient, class_id: u64) -> Result<()> {
+async fn snipe_class(config: &Config, client: &api::PerfectGymClient, class_id: u64) -> Result<()> {
     use chrono::{Duration, Local};
     use tokio::time::sleep;
 
@@ -172,7 +172,10 @@ async fn snipe_class(client: &api::PerfectGymClient, class_id: u64) -> Result<()
         sleep(std::time::Duration::from_secs(sleep_secs)).await;
     }
 
-    info!("Starting snipe attempts...");
+    // Re-login to get fresh token (old one may have expired during wait)
+    info!("Refreshing login token...");
+    let client = PerfectGymClient::new(config).login().await?;
+    info!("Login refreshed, starting snipe attempts...");
 
     // Now try every 100ms until successful
     let mut attempts = 0;
