@@ -126,13 +126,21 @@ For high-demand classes, use snipe mode to book the instant the window opens:
 ```
 
 The sniper will:
-1. Wait until 1 minute before the booking window opens
-2. Start attempting to book every 100ms
-3. Keep trying until successful (or max 3000 attempts)
+1. Display target class and when booking window opens
+2. Wait until 1 minute before the booking window opens
+3. Refresh login token (safe to run overnight)
+4. Attempt to book every 100ms until successful
+5. Stop after success or 3000 attempts (~5 minutes)
 
-Run in background:
+Run in background (for overnight waits):
 ```bash
 nohup ./target/release/gym_sniper snipe 76014 > snipe.log 2>&1 &
+
+# Check progress
+tail -f snipe.log
+
+# Stop if needed
+pkill -f "gym_sniper snipe"
 ```
 
 ### Run Auto-Scheduler
