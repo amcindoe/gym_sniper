@@ -73,16 +73,18 @@ async fn main() -> Result<()> {
             let client = client.login().await?;
             let classes = client.get_weekly_classes(days).await?;
 
-            println!("\n{:<8} {:<30} {:<20} {:<20}", "ID", "Name", "Time", "Status");
-            println!("{}", "-".repeat(80));
+            println!("\n{:<8} {:<30} {:<20} {:<12} {:<20}", "ID", "Name", "Time", "Status", "Trainer");
+            println!("{}", "-".repeat(92));
 
             for class in classes {
+                let trainer = class.trainer.as_deref().unwrap_or("-");
                 println!(
-                    "{:<8} {:<30} {:<20} {:<20}",
+                    "{:<8} {:<30} {:<20} {:<12} {:<20}",
                     class.id,
                     truncate(&class.name, 28),
                     class.start_time.format("%a %d %b %H:%M"),
-                    class.status
+                    class.status,
+                    truncate(trainer, 18)
                 );
             }
         }
