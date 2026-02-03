@@ -125,12 +125,20 @@ For high-demand classes, use snipe mode to book the instant the window opens:
 ./target/release/gym_sniper snipe 76014
 ```
 
-The sniper will:
-1. Display target class and when booking window opens
-2. Wait until 1 minute before the booking window opens
-3. Refresh login token (safe to run overnight)
-4. Attempt to book with random delays (200-500ms) to appear human-like
-5. Stop after success or ~10 minutes of trying
+The sniper uses a **polling-based approach** to detect exactly when a class becomes bookable:
+
+1. Display target class and estimated booking window
+2. Poll the class status at adaptive intervals:
+   - Every 60s when >30 min from estimated window
+   - Every 30s when 5-30 min away
+   - Every 10s when 1-5 min away
+   - Every 2s when <1 min away or past estimated time
+3. Automatically refresh login token periodically (safe to run overnight)
+4. When status changes to "Bookable", immediately start booking attempts
+5. Attempt to book with random delays (200-500ms) to appear human-like
+6. Stop after success or ~10 minutes of trying
+
+This approach is more reliable than calculated timing because it detects the actual API status change rather than estimating when the window opens.
 
 Run in background (for overnight waits):
 ```bash

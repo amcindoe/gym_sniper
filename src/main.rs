@@ -136,11 +136,12 @@ async fn main() -> Result<()> {
 async fn snipe_class(config: &Config, client: &api::PerfectGymClient, class_id: u64) -> Result<()> {
     use chrono::{Duration, Local};
     use tokio::time::sleep;
+    use rand::Rng;
 
-    // Get class details to find when booking opens
+    // Get initial class details
     let booking = client.get_class_details(class_id).await?;
     let class_time = booking.start_time;
-    let booking_opens = class_time - Duration::days(7) - Duration::hours(2);
+    let estimated_booking_opens = class_time - Duration::days(7) - Duration::hours(2);
 
     info!(
         "Target: {} at {}",
@@ -148,37 +149,132 @@ async fn snipe_class(config: &Config, client: &api::PerfectGymClient, class_id: 
         class_time.format("%a %d %b %H:%M")
     );
     info!(
-        "Booking window opens: {}",
-        booking_opens.format("%a %d %b %H:%M:%S")
+        "Estimated booking window: {}",
+        estimated_booking_opens.format("%a %d %b %H:%M:%S")
     );
+    info!("Current status: {}", booking.status);
 
-    // Wait until 1 minute before booking window opens
-    loop {
-        let now = Local::now();
-        let wait_until = booking_opens - Duration::minutes(1);
-        let time_to_wait = wait_until.signed_duration_since(now);
-
-        if time_to_wait.num_seconds() <= 0 {
-            break;
-        }
-
-        info!(
-            "Waiting {} until snipe starts (1 min before window)...",
-            format_duration(time_to_wait)
-        );
-
-        // Sleep in chunks so we can show progress
-        let sleep_secs = time_to_wait.num_seconds().min(60) as u64;
-        sleep(std::time::Duration::from_secs(sleep_secs)).await;
+    // If already bookable, try immediately
+    if booking.status == "Bookable" {
+        info!("Class is already bookable! Attempting to book...");
+        return attempt_booking(config, class_id).await;
     }
 
-    // Re-login to get fresh token (old one may have expired during wait)
-    info!("Refreshing login token...");
-    let client = PerfectGymClient::new(config).login().await?;
-    info!("Login refreshed, starting snipe attempts...");
+    // If already booked or on waitlist, nothing to do
+    if booking.status == "Booked" || booking.status == "Awaiting" {
+        info!("Already booked or on waitlist for this class!");
+        return Ok(());
+    }
 
-    // Try with random delays to appear more human-like
+    info!("Polling for status change (currently: {})...", booking.status);
+    let mut last_status = booking.status;
+    let mut poll_count = 0;
+    let mut client = client.clone();
+
+    loop {
+        poll_count += 1;
+        let now = Local::now();
+        let time_until_estimated = estimated_booking_opens.signed_duration_since(now);
+
+        // Determine poll interval based on proximity to estimated booking window
+        let poll_interval_secs = if time_until_estimated.num_minutes() > 30 {
+            // More than 30 min away: poll every 60 seconds
+            60
+        } else if time_until_estimated.num_minutes() > 5 {
+            // 5-30 min away: poll every 30 seconds
+            30
+        } else if time_until_estimated.num_minutes() > 1 {
+            // 1-5 min away: poll every 10 seconds
+            10
+        } else {
+            // Less than 1 min or past estimated time: poll every 2 seconds
+            2
+        };
+
+        // Re-login periodically to keep token fresh (every ~30 minutes)
+        if poll_count % 30 == 0 && poll_interval_secs >= 60 {
+            info!("Refreshing login token...");
+            client = PerfectGymClient::new(config).login().await?;
+        }
+
+        // Check class status
+        match client.get_class_details(class_id).await {
+            Ok(details) => {
+                if details.status != last_status {
+                    info!(
+                        "Status changed: {} -> {}",
+                        last_status, details.status
+                    );
+                    last_status = details.status.clone();
+                }
+
+                match details.status.as_str() {
+                    "Bookable" => {
+                        info!("Class is now BOOKABLE! Starting booking attempts...");
+                        return attempt_booking(config, class_id).await;
+                    }
+                    "Booked" | "Awaiting" => {
+                        info!("Already booked or on waitlist!");
+                        return Ok(());
+                    }
+                    "Unavailable" => {
+                        // Class has started or ended
+                        if class_time < now {
+                            error!("Class has already started/ended without becoming bookable");
+                            return Err(crate::error::GymSniperError::Api(
+                                "Class is no longer available".to_string(),
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+
+                if poll_count % 10 == 1 || poll_interval_secs <= 10 {
+                    info!(
+                        "Poll #{}: status={}, est. window in {}, next poll in {}s",
+                        poll_count,
+                        details.status,
+                        format_duration(time_until_estimated),
+                        poll_interval_secs
+                    );
+                }
+            }
+            Err(e) => {
+                error!("Poll #{}: Failed to get status: {}", poll_count, e);
+                // Re-login on error in case token expired
+                if format!("{}", e).contains("401") || format!("{}", e).contains("Unauthorized") {
+                    info!("Token may have expired, refreshing...");
+                    client = PerfectGymClient::new(config).login().await?;
+                }
+            }
+        }
+
+        // Add small random jitter to poll interval
+        let mut rng = rand::thread_rng();
+        let jitter_ms = rng.gen_range(0..1000);
+        sleep(std::time::Duration::from_millis(
+            (poll_interval_secs * 1000 + jitter_ms) as u64,
+        ))
+        .await;
+
+        // Safety limit: stop after 24 hours of polling
+        if poll_count > 24 * 60 * 60 / poll_interval_secs as usize {
+            error!("Gave up after extended polling");
+            return Err(crate::error::GymSniperError::Api(
+                "Polling timeout".to_string(),
+            ));
+        }
+    }
+}
+
+async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
+    use tokio::time::sleep;
     use rand::Rng;
+
+    // Fresh login for booking attempts
+    info!("Refreshing login token for booking...");
+    let client = PerfectGymClient::new(config).login().await?;
+
     let mut rng = rand::thread_rng();
     let mut attempts = 0;
 
@@ -204,6 +300,9 @@ async fn snipe_class(config: &Config, client: &api::PerfectGymClient, class_id: 
                 } else if err_str.contains("already") || err_str.contains("Already") {
                     info!("Already booked or on waitlist!");
                     return Ok(());
+                } else if err_str.contains("Full") || err_str.contains("full") {
+                    info!("Class is full, joining waitlist...");
+                    // Continue trying - the book endpoint may add to waitlist
                 } else {
                     error!("Attempt #{}: {}", attempts, e);
                 }
