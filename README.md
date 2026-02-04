@@ -14,7 +14,10 @@ Popular gym classes fill up within seconds of the booking window opening. The bo
 - **Upcoming** - View classes not yet bookable (window not open)
 - **Book** - Book a specific class by ID
 - **Bookings** - View your booked classes and waitlist positions
-- **Snipe** - Wait for booking window and aggressively book a specific class
+- **Snipe** - Wait for booking window and book immediately when it opens
+- **Snipe Add/Remove** - Queue multiple classes to snipe (one per day limit)
+- **Snipe List** - View queued snipes and their status
+- **Snipe Daemon** - Run continuously and auto-snipe all queued classes
 - **Schedule** - Run continuously and auto-book configured classes when the window opens
 
 ## Installation
@@ -186,11 +189,11 @@ For high-demand classes, use snipe mode to book the instant the window opens:
 The sniper is optimised for precise timing since booking windows open reliably on schedule:
 
 1. Display target class and booking window time
-2. Sleep until 5 minutes before window opens (no API calls)
+2. Sleep until 1 minute before window opens (no API calls)
 3. Refresh login token
-4. Poll status 3 times only: at 5 min, 1 min, and 10 sec before window
-5. Start booking attempts 0.5 seconds before window opens
-6. Attempt booking every 200ms, max 15 attempts
+4. Sleep until exactly when the booking window opens
+5. Start booking attempts immediately
+6. Attempt booking every 200ms, max 10 attempts
 7. Stop immediately on permanent failures (e.g., daily booking limit reached)
 8. If class is full, attempt to join waitlist
 
@@ -206,6 +209,37 @@ tail -f snipe.log
 # Stop if needed
 pkill -f "gym_sniper snipe"
 ```
+
+### Snipe Queue
+
+For managing multiple classes to snipe, use the snipe queue. Only one class per day is allowed (due to gym booking limits).
+
+```bash
+# Add a class to the queue
+./target/release/gym_sniper snipe-add 76014
+
+# View queued snipes
+./target/release/gym_sniper snipes
+
+# Remove a class from the queue
+./target/release/gym_sniper snipe-remove 76014
+```
+
+The queue is stored in `snipes.json` and enforces one class per day.
+
+### Snipe Daemon
+
+Run the daemon to automatically snipe all queued classes:
+
+```bash
+./target/release/gym_sniper snipe-daemon
+```
+
+The daemon:
+1. Monitors the snipe queue continuously
+2. Executes snipes when booking windows approach
+3. Marks snipes as completed or failed
+4. Cleans up old entries after 7 days
 
 ### Run Auto-Scheduler
 
@@ -278,14 +312,15 @@ The tool interacts with the Perfect Gym API in a browser-like manner:
 
 ```
 src/
-├── main.rs       # CLI and command dispatch
-├── api.rs        # Perfect Gym API client
-├── config.rs     # Configuration file parsing
-├── email.rs      # Email notifications
-├── error.rs      # Error types
-├── scheduler.rs  # Auto-booking scheduler
-├── snipe.rs      # Snipe logic and booking attempts
-└── util.rs       # Helper functions
+├── main.rs        # CLI and command dispatch
+├── api.rs         # Perfect Gym API client
+├── config.rs      # Configuration file parsing
+├── email.rs       # Email notifications
+├── error.rs       # Error types
+├── scheduler.rs   # Auto-booking scheduler
+├── snipe.rs       # Snipe logic and booking attempts
+├── snipe_queue.rs # Snipe queue management
+└── util.rs        # Helper functions
 ```
 
 ## Security Note

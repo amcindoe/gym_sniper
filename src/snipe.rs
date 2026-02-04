@@ -1,11 +1,12 @@
 use chrono::{Duration, Local};
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::api::PerfectGymClient;
 use crate::config::Config;
 use crate::email;
 use crate::error::Result;
+use crate::snipe_queue::SnipeQueue;
 use crate::util::format_duration;
 
 /// Snipe a class - wait for booking window and book immediately
@@ -41,13 +42,13 @@ pub async fn snipe_class(config: &Config, client: &PerfectGymClient, class_id: u
     let now = Local::now();
     let time_until_window = booking_window_opens.signed_duration_since(now);
 
-    // If more than 5 minutes until window, sleep until 5 minutes before
-    if time_until_window.num_minutes() > 5 {
-        let wake_time = booking_window_opens - Duration::minutes(5);
+    // If more than 1 minute until window, sleep until 1 minute before
+    if time_until_window.num_minutes() > 1 {
+        let wake_time = booking_window_opens - Duration::minutes(1);
         let sleep_duration = wake_time.signed_duration_since(now);
 
         info!(
-            "Booking window in {}. Sleeping until {} (5 min before window)...",
+            "Booking window in {}. Sleeping until {} (1 min before window)...",
             format_duration(time_until_window),
             wake_time.format("%a %d %b %H:%M:%S")
         );
@@ -70,76 +71,20 @@ pub async fn snipe_class(config: &Config, client: &PerfectGymClient, class_id: u
         }
     }
 
-    // Refresh token 5 minutes before window
+    // Refresh token 1 minute before window
     info!("Refreshing login token...");
-    let client = PerfectGymClient::new(config).login().await?;
+    let _client = PerfectGymClient::new(config).login().await?;
     info!("Token refreshed.");
 
-    // Poll 1: ~5 minutes before
+    // Sleep until exactly when window opens
     let now = Local::now();
     let time_until_window = booking_window_opens.signed_duration_since(now);
-    info!("Poll 1/3: {} until window, status check...", format_duration(time_until_window));
-
-    if let Ok(details) = client.get_class_details(class_id).await {
-        info!("Status: {}", details.status);
-        if details.status == "Bookable" {
-            info!("Already bookable! Attempting to book...");
-            return attempt_booking(config, class_id).await;
-        }
+    if time_until_window.num_milliseconds() > 0 {
+        info!("Waiting {}ms until booking window opens...", time_until_window.num_milliseconds());
+        sleep(std::time::Duration::from_millis(time_until_window.num_milliseconds() as u64)).await;
     }
 
-    // Sleep until 1 minute before
-    let now = Local::now();
-    let one_min_before = booking_window_opens - Duration::minutes(1);
-    let sleep_until_1min = one_min_before.signed_duration_since(now);
-    if sleep_until_1min.num_seconds() > 0 {
-        sleep(std::time::Duration::from_secs(sleep_until_1min.num_seconds() as u64)).await;
-    }
-
-    // Poll 2: ~1 minute before
-    let now = Local::now();
-    let time_until_window = booking_window_opens.signed_duration_since(now);
-    info!("Poll 2/3: {} until window, status check...", format_duration(time_until_window));
-
-    if let Ok(details) = client.get_class_details(class_id).await {
-        info!("Status: {}", details.status);
-        if details.status == "Bookable" {
-            info!("Already bookable! Attempting to book...");
-            return attempt_booking(config, class_id).await;
-        }
-    }
-
-    // Sleep until 10 seconds before
-    let now = Local::now();
-    let ten_sec_before = booking_window_opens - Duration::seconds(10);
-    let sleep_until_10sec = ten_sec_before.signed_duration_since(now);
-    if sleep_until_10sec.num_seconds() > 0 {
-        sleep(std::time::Duration::from_secs(sleep_until_10sec.num_seconds() as u64)).await;
-    }
-
-    // Poll 3: ~10 seconds before
-    let now = Local::now();
-    let time_until_window = booking_window_opens.signed_duration_since(now);
-    info!("Poll 3/3: {} until window, status check...", format_duration(time_until_window));
-
-    if let Ok(details) = client.get_class_details(class_id).await {
-        info!("Status: {}", details.status);
-        if details.status == "Bookable" {
-            info!("Already bookable! Attempting to book...");
-            return attempt_booking(config, class_id).await;
-        }
-    }
-
-    // Sleep until 0.5 seconds before window opens
-    let now = Local::now();
-    let half_sec_before = booking_window_opens - Duration::milliseconds(500);
-    let sleep_until_start = half_sec_before.signed_duration_since(now);
-    if sleep_until_start.num_milliseconds() > 0 {
-        info!("Waiting {}ms until booking attempts start...", sleep_until_start.num_milliseconds());
-        sleep(std::time::Duration::from_millis(sleep_until_start.num_milliseconds() as u64)).await;
-    }
-
-    info!("Starting booking attempts NOW!");
+    info!("Booking window open - starting booking attempts NOW!");
     attempt_booking(config, class_id).await
 }
 
@@ -156,7 +101,7 @@ pub async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
     let class_trainer = class_details.as_ref().and_then(|d| d.trainer.as_deref());
 
     let mut attempts = 0;
-    const MAX_ATTEMPTS: u32 = 15;
+    const MAX_ATTEMPTS: u32 = 10;
 
     loop {
         attempts += 1;
@@ -230,5 +175,94 @@ pub async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
 
         // Fixed 200ms delay between attempts
         sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+/// Run the snipe daemon - continuously monitors and executes queued snipes
+pub async fn run_snipe_daemon(config: &Config) -> Result<()> {
+    info!("Snipe daemon started. Monitoring snipe queue...");
+
+    loop {
+        // Clean up old entries
+        let mut queue = SnipeQueue::load()?;
+        queue.cleanup_old_entries()?;
+
+        // Get pending snipes
+        let pending = queue.pending_snipes();
+
+        if pending.is_empty() {
+            info!("No pending snipes. Checking again in 60 seconds...");
+            sleep(std::time::Duration::from_secs(60)).await;
+            continue;
+        }
+
+        // Find the next snipe (earliest booking window)
+        let next_snipe = pending[0];
+        let now = Local::now();
+        let time_until_window = next_snipe.booking_window.signed_duration_since(now);
+
+        info!(
+            "Next snipe: {} at {} (window opens in {})",
+            next_snipe.class_name,
+            next_snipe.class_time.format("%a %d %b %H:%M"),
+            format_duration(time_until_window)
+        );
+
+        // If window is more than 5 minutes away, sleep and check again
+        if time_until_window.num_minutes() > 5 {
+            let sleep_duration = if time_until_window.num_minutes() > 60 {
+                // More than 1 hour away - check every 30 minutes
+                std::time::Duration::from_secs(30 * 60)
+            } else if time_until_window.num_minutes() > 30 {
+                // 30-60 min away - check every 10 minutes
+                std::time::Duration::from_secs(10 * 60)
+            } else {
+                // 5-30 min away - check every minute
+                std::time::Duration::from_secs(60)
+            };
+
+            info!("Sleeping for {} seconds...", sleep_duration.as_secs());
+            sleep(sleep_duration).await;
+            continue;
+        }
+
+        // Time to snipe! Execute it
+        let class_id = next_snipe.class_id;
+        let class_name = next_snipe.class_name.clone();
+
+        info!("Executing snipe for {} (class ID {})...", class_name, class_id);
+
+        // Create fresh client for the snipe
+        let client = match PerfectGymClient::new(config).login().await {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to login for snipe: {}", e);
+                let mut queue = SnipeQueue::load()?;
+                queue.mark_failed(class_id, &format!("Login failed: {}", e))?;
+                continue;
+            }
+        };
+
+        // Execute the snipe
+        match snipe_class(config, &client, class_id).await {
+            Ok(()) => {
+                info!("Snipe successful for {}", class_name);
+                let mut queue = SnipeQueue::load()?;
+                queue.mark_completed(class_id)?;
+            }
+            Err(e) => {
+                let err_str = format!("{}", e);
+                if err_str.contains("DailyBookingLimitReached") {
+                    warn!("Daily booking limit reached for {}", class_name);
+                } else {
+                    error!("Snipe failed for {}: {}", class_name, e);
+                }
+                let mut queue = SnipeQueue::load()?;
+                queue.mark_failed(class_id, &err_str)?;
+            }
+        }
+
+        // Brief pause before checking for next snipe
+        sleep(std::time::Duration::from_secs(5)).await;
     }
 }

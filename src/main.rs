@@ -4,14 +4,16 @@ mod email;
 mod error;
 mod scheduler;
 mod snipe;
+mod snipe_queue;
 mod util;
 
 use clap::{Parser, Subcommand};
-use tracing::info;
+use tracing::{error, info};
 
 use crate::api::PerfectGymClient;
 use crate::config::Config;
 use crate::error::Result;
+use crate::snipe_queue::{SnipeEntry, SnipeQueue, SnipeStatus};
 use crate::util::truncate;
 
 #[derive(Parser)]
@@ -55,11 +57,25 @@ enum Commands {
     },
     /// Show your booked and waitlisted classes
     Bookings,
-    /// Snipe a class - wait for booking window and book immediately
+    /// Snipe a class - wait for booking window and book immediately (single class)
     Snipe {
         /// Class ID to snipe
         class_id: u64,
     },
+    /// Add a class to the snipe queue
+    SnipeAdd {
+        /// Class ID to add
+        class_id: u64,
+    },
+    /// Remove a class from the snipe queue
+    SnipeRemove {
+        /// Class ID to remove
+        class_id: u64,
+    },
+    /// List all queued snipes
+    Snipes,
+    /// Run the snipe daemon to automatically snipe all queued classes
+    SnipeDaemon,
     /// Run the scheduler to auto-book configured classes
     Schedule,
     /// Test login credentials
@@ -221,6 +237,98 @@ async fn main() -> Result<()> {
             info!("Sniping class {}...", class_id);
             let client = client.login().await?;
             snipe::snipe_class(&config, &client, class_id).await?;
+        }
+        Commands::SnipeAdd { class_id } => {
+            info!("Adding class {} to snipe queue...", class_id);
+            let client = client.login().await?;
+
+            // Get class details
+            let details = client.get_class_details(class_id).await?;
+            let booking_window = details.start_time
+                - chrono::Duration::days(7)
+                - chrono::Duration::hours(2);
+
+            let entry = SnipeEntry {
+                class_id,
+                class_name: details.name.clone(),
+                class_time: details.start_time,
+                booking_window,
+                trainer: details.trainer.clone(),
+                added_at: chrono::Local::now(),
+                status: SnipeStatus::Pending,
+                error_message: None,
+            };
+
+            let mut queue = SnipeQueue::load()?;
+            queue.add(entry)?;
+
+            info!(
+                "Added to snipe queue: {} at {} (window opens {})",
+                details.name,
+                details.start_time.format("%a %d %b %H:%M"),
+                booking_window.format("%a %d %b %H:%M")
+            );
+        }
+        Commands::SnipeRemove { class_id } => {
+            let mut queue = SnipeQueue::load()?;
+            if queue.remove(class_id)? {
+                info!("Removed class {} from snipe queue", class_id);
+            } else {
+                error!("Class {} not found in snipe queue", class_id);
+            }
+        }
+        Commands::Snipes => {
+            let queue = SnipeQueue::load()?;
+            let pending = queue.pending_snipes();
+
+            if pending.is_empty() {
+                println!("\nNo pending snipes in queue.");
+            } else {
+                println!("\n{:<8} {:<25} {:<12} {:<18} {:<18}", "ID", "Name", "Trainer", "Class Time", "Window Opens");
+                println!("{}", "-".repeat(83));
+
+                for snipe in pending {
+                    let trainer = snipe.trainer.as_deref().unwrap_or("-");
+                    println!(
+                        "{:<8} {:<25} {:<12} {:<18} {:<18}",
+                        snipe.class_id,
+                        truncate(&snipe.class_name, 23),
+                        truncate(trainer, 10),
+                        snipe.class_time.format("%a %d %b %H:%M"),
+                        snipe.booking_window.format("%a %d %b %H:%M")
+                    );
+                }
+            }
+
+            // Also show recent completed/failed
+            let non_pending: Vec<_> = queue.snipes.iter()
+                .filter(|s| s.status != SnipeStatus::Pending)
+                .collect();
+
+            if !non_pending.is_empty() {
+                println!("\nRecent completed/failed:");
+                println!("{:<8} {:<25} {:<18} {:<10}", "ID", "Name", "Class Time", "Status");
+                println!("{}", "-".repeat(63));
+
+                for snipe in non_pending {
+                    let status = match snipe.status {
+                        SnipeStatus::Completed => "Completed",
+                        SnipeStatus::Failed => "Failed",
+                        SnipeStatus::Pending => "Pending",
+                    };
+                    println!(
+                        "{:<8} {:<25} {:<18} {:<10}",
+                        snipe.class_id,
+                        truncate(&snipe.class_name, 23),
+                        snipe.class_time.format("%a %d %b %H:%M"),
+                        status
+                    );
+                }
+            }
+        }
+        Commands::SnipeDaemon => {
+            info!("Starting snipe daemon...");
+            snipe::run_snipe_daemon(&config).await?;
         }
         Commands::Schedule => {
             info!("Starting scheduler...");
