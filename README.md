@@ -11,6 +11,7 @@ Popular gym classes fill up within seconds of the booking window opening. The bo
 - **Login** - Test your credentials
 - **List** - View available classes with their booking status
 - **Trainer** - Search classes by trainer name
+- **Upcoming** - View classes not yet bookable (window not open)
 - **Book** - Book a specific class by ID
 - **Bookings** - View your booked classes and waitlist positions
 - **Snipe** - Wait for booking window and aggressively book a specific class
@@ -132,6 +133,26 @@ Output shows:
 ```
 
 The search is case-insensitive and matches partial names.
+
+### View Upcoming Classes (Not Yet Bookable)
+
+```bash
+# Show unbookable classes for next 7 days (default)
+./target/release/gym_sniper upcoming
+
+# Show up to 21 days
+./target/release/gym_sniper upcoming -d 21
+```
+
+Shows classes where the booking window hasn't opened yet, along with when the window opens:
+
+```
+ID       Name                           Trainer        Time                 Window Opens
+-----------------------------------------------------------------------------------------------
+76045    BodyPump                       Sarah          Wed 11 Feb 09:15     Tue 04 Feb 07:15
+```
+
+Use this to find class IDs for sniping.
 
 ### Book a Class
 

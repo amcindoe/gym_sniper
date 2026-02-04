@@ -39,6 +39,12 @@ enum Commands {
         #[arg(short, long, default_value = "28")]
         days: u32,
     },
+    /// List classes not yet bookable (booking window not open)
+    Upcoming {
+        /// Number of days to show (default: 7, max: 21)
+        #[arg(short, long, default_value = "7")]
+        days: u32,
+    },
     /// Book a specific class by ID
     Book {
         /// Class ID to book
@@ -128,6 +134,47 @@ async fn main() -> Result<()> {
                         truncate(trainer, 13),
                         class.start_time.format("%a %d %b %H:%M"),
                         class.status
+                    );
+                }
+            }
+        }
+        Commands::Upcoming { days } => {
+            let days = days.min(21); // Cap at 21 days
+            info!("Fetching upcoming classes (not yet bookable) for next {} days...", days);
+            let client = client.login().await?;
+
+            // Need to fetch 7 days ahead of requested range since booking window is 7d+2h before class
+            let fetch_days = days + 8;
+            let classes = client.get_weekly_classes(fetch_days).await?;
+
+            let now = chrono::Local::now();
+            let booking_window = chrono::Duration::days(7) + chrono::Duration::hours(2);
+
+            // Filter to classes where booking window hasn't opened yet
+            let filtered: Vec<_> = classes
+                .into_iter()
+                .filter(|c| {
+                    let window_opens = c.start_time - booking_window;
+                    window_opens > now
+                })
+                .collect();
+
+            if filtered.is_empty() {
+                println!("\nNo upcoming unbookable classes found.");
+            } else {
+                println!("\n{:<8} {:<30} {:<15} {:<20} {:<20}", "ID", "Name", "Trainer", "Time", "Window Opens");
+                println!("{}", "-".repeat(95));
+
+                for class in filtered {
+                    let trainer = class.trainer.as_deref().unwrap_or("-");
+                    let window_opens = class.start_time - booking_window;
+                    println!(
+                        "{:<8} {:<30} {:<15} {:<20} {:<20}",
+                        class.id,
+                        truncate(&class.name, 28),
+                        truncate(trainer, 13),
+                        class.start_time.format("%a %d %b %H:%M"),
+                        window_opens.format("%a %d %b %H:%M")
                     );
                 }
             }
