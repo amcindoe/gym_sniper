@@ -274,6 +274,20 @@ The tool interacts with the Perfect Gym API in a browser-like manner:
 - **Random delays** - 200-500ms between requests to appear human-like
 - **Session cookies** - Maintains cookies like a real browser session
 
+## Project Structure
+
+```
+src/
+├── main.rs       # CLI and command dispatch
+├── api.rs        # Perfect Gym API client
+├── config.rs     # Configuration file parsing
+├── email.rs      # Email notifications
+├── error.rs      # Error types
+├── scheduler.rs  # Auto-booking scheduler
+├── snipe.rs      # Snipe logic and booking attempts
+└── util.rs       # Helper functions
+```
+
 ## Security Note
 
 Your credentials are stored in plain text in `config.toml`. Keep this file secure:
