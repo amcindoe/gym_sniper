@@ -183,20 +183,18 @@ For high-demand classes, use snipe mode to book the instant the window opens:
 ./target/release/gym_sniper snipe 76014
 ```
 
-The sniper uses a **polling-based approach** to detect exactly when a class becomes bookable:
+The sniper is optimised for precise timing since booking windows open reliably on schedule:
 
-1. Display target class and estimated booking window
-2. If window is more than 30 minutes away, sleep (no API calls) until 30 min before
-3. Refresh login token and start polling at adaptive intervals:
-   - Every 30s when 5-30 min away
-   - Every 10s when 1-5 min away
-   - Every 2s when <1 min away or past estimated time
-4. Refresh token again 10 minutes before window opens
-5. When status changes to "Bookable", immediately start booking attempts
-6. Stop immediately on permanent failures (e.g., daily booking limit reached)
-7. If class is full, attempt to join waitlist then stop
+1. Display target class and booking window time
+2. Sleep until 5 minutes before window opens (no API calls)
+3. Refresh login token
+4. Poll status 3 times only: at 5 min, 1 min, and 10 sec before window
+5. Start booking attempts 0.5 seconds before window opens
+6. Attempt booking every 200ms, max 15 attempts
+7. Stop immediately on permanent failures (e.g., daily booking limit reached)
+8. If class is full, attempt to join waitlist
 
-This is efficient for overnight sniping - it won't make API calls until close to the booking window.
+This is efficient for overnight sniping and maximises chance of getting a spot.
 
 Run in background (for overnight waits):
 ```bash
