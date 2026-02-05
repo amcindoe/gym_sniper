@@ -229,10 +229,28 @@ The queue is stored in `snipes.json` and enforces one class per day.
 
 ### Snipe Daemon
 
-Run the daemon to automatically snipe all queued classes:
+Run the daemon to automatically snipe all queued classes.
+
+**Foreground** (for testing - stops when you close terminal or press Ctrl+C):
 
 ```bash
 ./target/release/gym_sniper snipe-daemon
+```
+
+**Background** (keeps running after terminal closes):
+
+```bash
+# Check if daemon is already running
+pgrep -f snipe-daemon
+
+# Stop existing daemon (if running)
+pkill -f snipe-daemon
+
+# Start daemon in background
+nohup ./target/release/gym_sniper snipe-daemon > snipe_daemon.log 2>&1 &
+
+# Check logs
+tail -f snipe_daemon.log
 ```
 
 The daemon:
@@ -240,6 +258,8 @@ The daemon:
 2. Executes snipes when booking windows approach
 3. Marks snipes as completed or failed
 4. Cleans up old entries after 7 days
+
+**Note:** Only run one daemon instance at a time to avoid duplicate booking attempts.
 
 ### Run Auto-Scheduler
 
