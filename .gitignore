@@ -14,3 +14,7 @@ config.toml
 # OS
 .DS_Store
 Thumbs.db
+
+# Runtime data
+snipes.json
+snipe_daemon.log
