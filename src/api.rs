@@ -464,7 +464,19 @@ impl PerfectGymClient {
         for class in classes {
             if class.status == "Booked" || class.status == "Awaiting" {
                 match self.get_class_details(class.id).await {
-                    Ok(booking) => bookings.push(booking),
+                    Ok(mut booking) => {
+                        // Use trainer from WeeklyClasses if details don't have one
+                        if booking.trainer.is_none() {
+                            booking.trainer = class.trainer.clone();
+                        }
+                        // Set status based on waitlist position
+                        booking.status = if booking.waitlist_position.is_some() {
+                            "Waitlist".to_string()
+                        } else {
+                            "Booked".to_string()
+                        };
+                        bookings.push(booking);
+                    }
                     Err(_) => continue,
                 }
             }

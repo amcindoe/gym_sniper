@@ -94,10 +94,10 @@ impl BookingsView {
                         row.col(|ui| {
                             let (status_text, color): (String, Color32) = match booking.status.as_str() {
                                 "Booked" => ("Booked".to_string(), Color32::GREEN),
-                                "Awaiting" => {
+                                "Waitlist" => {
                                     let pos = booking
                                         .waitlist_position
-                                        .map(|p| format!("#{}", p))
+                                        .map(|p| format!("Waitlist #{}", p))
                                         .unwrap_or_else(|| "Waitlist".to_string());
                                     (pos, Color32::YELLOW)
                                 }
