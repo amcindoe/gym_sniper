@@ -1,6 +1,6 @@
 # gym_sniper
 
-A command-line tool to automatically book gym classes on Perfect Gym portals at the exact moment the booking window opens.
+A tool to automatically book gym classes on Perfect Gym portals at the exact moment the booking window opens. Available as both a command-line tool and a graphical interface.
 
 ## Problem
 
@@ -33,7 +33,9 @@ cd gym_sniper
 cargo build --release
 ```
 
-The binary will be at `./target/release/gym_sniper`.
+This builds two binaries:
+- `./target/release/gym_sniper` - Command-line interface
+- `./target/release/gym_sniper_gui` - Graphical interface
 
 ## Configuration
 
@@ -273,6 +275,27 @@ The scheduler:
 3. Books immediately when the window opens
 4. Logs success/failure
 
+## Graphical Interface
+
+A GUI is available for managing bookings and the snipe queue:
+
+```bash
+./target/release/gym_sniper_gui
+```
+
+The GUI provides:
+- **Confirmed Bookings** - View your booked classes and waitlist positions, cancel bookings
+- **Future Bookings (Snipe Queue)** - View and manage classes queued for sniping
+- **Search** - Find classes by day, time, name, or trainer and add them to the snipe queue
+
+The GUI fetches data directly from the Perfect Gym API. It automatically re-authenticates if the session expires.
+
+**Note:** The GUI is for viewing and managing bookings only. To actually execute snipes at the right time, run the snipe daemon separately:
+
+```bash
+nohup ./target/release/gym_sniper snipe-daemon > snipe_daemon.log 2>&1 &
+```
+
 ## Running as a Service
 
 To run the scheduler continuously in the background:
@@ -332,15 +355,26 @@ The tool interacts with the Perfect Gym API in a browser-like manner:
 
 ```
 src/
-├── main.rs        # CLI and command dispatch
-├── api.rs         # Perfect Gym API client
-├── config.rs      # Configuration file parsing
-├── email.rs       # Email notifications
-├── error.rs       # Error types
-├── scheduler.rs   # Auto-booking scheduler
-├── snipe.rs       # Snipe logic and booking attempts
-├── snipe_queue.rs # Snipe queue management
-└── util.rs        # Helper functions
+├── main.rs          # CLI entry point and command dispatch
+├── gui_main.rs      # GUI entry point
+├── lib.rs           # Library root (shared between CLI and GUI)
+├── api.rs           # Perfect Gym API client
+├── config.rs        # Configuration file parsing
+├── email.rs         # Email notifications
+├── error.rs         # Error types
+├── scheduler.rs     # Auto-booking scheduler
+├── snipe.rs         # Snipe logic and booking attempts
+├── snipe_queue.rs   # Snipe queue management
+├── util.rs          # Helper functions
+└── gui/
+    ├── mod.rs       # GUI module root
+    ├── app.rs       # Main GUI application
+    ├── async_bridge.rs  # Async communication layer
+    └── views/
+        ├── mod.rs
+        ├── bookings.rs      # Confirmed bookings view
+        ├── snipe_queue.rs   # Snipe queue view
+        └── search.rs        # Class search view
 ```
 
 ## Security Note
