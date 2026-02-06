@@ -99,6 +99,12 @@ struct BookClassRequest {
     club_id: String,
 }
 
+#[derive(Debug, Serialize)]
+struct CancelBookingRequest {
+    #[serde(rename = "classId")]
+    class_id: u64,
+}
+
 #[derive(Debug, Deserialize)]
 struct BookClassResponse {
     #[serde(rename = "Tickets")]
@@ -465,6 +471,49 @@ impl PerfectGymClient {
         }
 
         Ok(bookings)
+    }
+
+    pub async fn cancel_booking(&self, class_id: u64) -> Result<()> {
+        let url = format!(
+            "{}/Classes/ClassCalendar/CancelBooking",
+            self.config.gym.base_url
+        );
+
+        let request = CancelBookingRequest { class_id };
+
+        let token = self.token.read().await;
+        let token = token
+            .as_ref()
+            .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))?;
+
+        let origin = &self.config.gym.base_url.replace("/clientportal2", "");
+        let referer = format!("{}/", self.config.gym.base_url);
+
+        let response = self
+            .client
+            .post(&url)
+            .header(header::AUTHORIZATION, format!("Bearer {}", token))
+            .header(header::CONTENT_TYPE, "application/json;charset=utf-8")
+            .header(header::ACCEPT, "application/json, text/plain, */*")
+            .header(header::ORIGIN, origin)
+            .header(header::REFERER, &referer)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("CP-LANG", "en")
+            .header("CP-MODE", "desktop")
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(GymSniperError::Api(format!(
+                "Cancel failed ({}): {}",
+                status, body
+            )));
+        }
+
+        Ok(())
     }
 }
 

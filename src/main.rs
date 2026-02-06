@@ -1,20 +1,13 @@
-mod api;
-mod config;
-mod email;
-mod error;
-mod scheduler;
-mod snipe;
-mod snipe_queue;
-mod util;
-
 use clap::{Parser, Subcommand};
 use tracing::{error, info};
 
-use crate::api::PerfectGymClient;
-use crate::config::Config;
-use crate::error::Result;
-use crate::snipe_queue::{SnipeEntry, SnipeQueue, SnipeStatus};
-use crate::util::truncate;
+use gym_sniper::api::PerfectGymClient;
+use gym_sniper::config::Config;
+use gym_sniper::error::Result;
+use gym_sniper::scheduler;
+use gym_sniper::snipe;
+use gym_sniper::snipe_queue::{SnipeEntry, SnipeQueue, SnipeStatus};
+use gym_sniper::util::truncate;
 
 #[derive(Parser)]
 #[command(name = "gym_sniper")]
