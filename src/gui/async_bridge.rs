@@ -107,39 +107,46 @@ pub fn run_async_bridge(
 
                         match cmd {
                             Command::RefreshBookings => {
-                                // Try to get bookings, retry once on auth error
+                                // Try to get bookings
                                 let result = async {
                                     let client = manager.get_client().await?;
                                     client.get_my_bookings().await.map_err(|e| e.to_string())
                                 }.await;
 
-                                match result {
-                                    Ok(bookings) => {
-                                        let _ = resp_tx.send(Response::BookingsLoaded(bookings));
-                                    }
-                                    Err(e) if is_auth_error(&e) => {
-                                        // Token expired, re-login and retry
-                                        manager.invalidate();
-                                        match manager.get_client().await {
-                                            Ok(client) => match client.get_my_bookings().await {
-                                                Ok(bookings) => {
-                                                    let _ = resp_tx.send(Response::BookingsLoaded(bookings));
-                                                }
-                                                Err(e) => {
-                                                    let _ = resp_tx.send(Response::OperationError(format!(
-                                                        "Failed to load bookings: {}", e
-                                                    )));
-                                                }
-                                            },
-                                            Err(e) => {
-                                                let _ = resp_tx.send(Response::OperationError(e));
+                                let should_retry = match &result {
+                                    Ok(bookings) if bookings.is_empty() => true, // Empty might mean expired token
+                                    Err(e) if is_auth_error(e) => true,
+                                    _ => false,
+                                };
+
+                                if should_retry {
+                                    // Token might be expired, force re-login and retry
+                                    manager.invalidate();
+                                    match manager.get_client().await {
+                                        Ok(client) => match client.get_my_bookings().await {
+                                            Ok(bookings) => {
+                                                let _ = resp_tx.send(Response::BookingsLoaded(bookings));
                                             }
+                                            Err(e) => {
+                                                let _ = resp_tx.send(Response::OperationError(format!(
+                                                    "Failed to load bookings: {}", e
+                                                )));
+                                            }
+                                        },
+                                        Err(e) => {
+                                            let _ = resp_tx.send(Response::OperationError(e));
                                         }
                                     }
-                                    Err(e) => {
-                                        let _ = resp_tx.send(Response::OperationError(format!(
-                                            "Failed to load bookings: {}", e
-                                        )));
+                                } else {
+                                    match result {
+                                        Ok(bookings) => {
+                                            let _ = resp_tx.send(Response::BookingsLoaded(bookings));
+                                        }
+                                        Err(e) => {
+                                            let _ = resp_tx.send(Response::OperationError(format!(
+                                                "Failed to load bookings: {}", e
+                                            )));
+                                        }
                                     }
                                 }
                             }

@@ -26,11 +26,31 @@ Popular gym classes fill up within seconds of the booking window opening. The bo
 
 - Rust toolchain (install via [rustup](https://rustup.rs/))
 
-### Build
+### Build (Linux)
 
 ```bash
 cd gym_sniper
 cargo build --release
+```
+
+### Build (macOS)
+
+```bash
+cd gym_sniper
+cargo build --release
+```
+
+The GUI uses egui/eframe which supports macOS natively. No additional dependencies are required.
+
+**Apple Silicon (M1/M2/M3):** The Rust toolchain handles ARM builds automatically.
+
+**Gatekeeper:** If macOS blocks the binary as "unidentified developer", you can allow it via:
+- Right-click the binary → Open, or
+- System Preferences → Security & Privacy → "Open Anyway"
+
+Alternatively, remove the quarantine attribute:
+```bash
+xattr -d com.apple.quarantine ./target/release/gym_sniper_gui
 ```
 
 This builds two binaries:
@@ -333,6 +353,58 @@ sudo systemctl status gym-sniper
 
 # View logs
 journalctl -u gym-sniper -f
+```
+
+### Using launchd (macOS)
+
+Create `~/Library/LaunchAgents/com.gym-sniper.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gym-sniper</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/gym_sniper/target/release/gym_sniper</string>
+        <string>snipe-daemon</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/path/to/gym_sniper</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/path/to/gym_sniper/snipe_daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>/path/to/gym_sniper/snipe_daemon.log</string>
+</dict>
+</plist>
+```
+
+Then:
+
+```bash
+# Load the service
+launchctl load ~/Library/LaunchAgents/com.gym-sniper.plist
+
+# Start manually
+launchctl start com.gym-sniper
+
+# Check status
+launchctl list | grep gym-sniper
+
+# Stop the service
+launchctl stop com.gym-sniper
+
+# Unload the service
+launchctl unload ~/Library/LaunchAgents/com.gym-sniper.plist
+
+# View logs
+tail -f /path/to/gym_sniper/snipe_daemon.log
 ```
 
 ## Debugging

@@ -36,32 +36,43 @@ impl BookingsView {
             return;
         }
 
-        let available_height = ui.available_height().min(200.0);
+        const MAX_ROWS: usize = 5;
+        const HEADER_HEIGHT: f32 = 20.0;
+        const ROW_HEIGHT: f32 = 25.0;
 
-        TableBuilder::new(ui)
-            .striped(true)
-            .resizable(true)
-            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(Column::auto().at_least(60.0)) // ID
-            .column(Column::remainder().at_least(120.0)) // Name
-            .column(Column::auto().at_least(80.0)) // Trainer
-            .column(Column::auto().at_least(120.0)) // Time
-            .column(Column::auto().at_least(80.0)) // Status
-            .column(Column::auto().at_least(60.0)) // Actions
-            .min_scrolled_height(0.0)
-            .max_scroll_height(available_height)
-            .header(20.0, |mut header| {
+        let needs_scroll = bookings.len() > MAX_ROWS;
+
+        // Use unique ID to prevent scroll conflicts with other tables
+        ui.push_id("bookings_table", |ui| {
+            let mut table = TableBuilder::new(ui)
+                .striped(true)
+                .resizable(true)
+                .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                .column(Column::auto().at_least(60.0)) // ID
+                .column(Column::remainder().at_least(70.0)) // Class
+                .column(Column::auto().at_least(96.0)) // Trainer
+                .column(Column::auto().at_least(144.0)) // Class Time
+                .column(Column::auto().at_least(80.0)) // Status
+                .column(Column::auto().at_least(60.0)); // Actions
+
+            if needs_scroll {
+                table = table
+                    .min_scrolled_height(0.0)
+                    .max_scroll_height(HEADER_HEIGHT + MAX_ROWS as f32 * ROW_HEIGHT);
+            }
+
+            table.header(HEADER_HEIGHT, |mut header| {
                 header.col(|ui| {
                     ui.strong("ID");
                 });
                 header.col(|ui| {
-                    ui.strong("Name");
+                    ui.strong("Class");
                 });
                 header.col(|ui| {
                     ui.strong("Trainer");
                 });
                 header.col(|ui| {
-                    ui.strong("Time");
+                    ui.strong("Class Time");
                 });
                 header.col(|ui| {
                     ui.strong("Status");
@@ -116,5 +127,6 @@ impl BookingsView {
                     });
                 }
             });
+        });
     }
 }

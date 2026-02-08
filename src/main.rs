@@ -100,15 +100,15 @@ async fn main() -> Result<()> {
             let client = client.login().await?;
             let classes = client.get_weekly_classes(days).await?;
 
-            println!("\n{:<8} {:<30} {:<15} {:<20} {:<12}", "ID", "Name", "Trainer", "Time", "Status");
+            println!("\n{:<8} {:<25} {:<15} {:<20} {:<12}", "ID", "Class", "Trainer", "Class Time", "Status");
             println!("{}", "-".repeat(87));
 
             for class in classes {
                 let trainer = class.trainer.as_deref().unwrap_or("-");
                 println!(
-                    "{:<8} {:<30} {:<15} {:<20} {:<12}",
+                    "{:<8} {:<25} {:<15} {:<20} {:<12}",
                     class.id,
-                    truncate(&class.name, 28),
+                    truncate(&class.name, 23),
                     truncate(trainer, 13),
                     class.start_time.format("%a %d %b %H:%M"),
                     class.status
@@ -134,15 +134,15 @@ async fn main() -> Result<()> {
             if filtered.is_empty() {
                 println!("\nNo classes found for trainer matching '{}'", name);
             } else {
-                println!("\n{:<8} {:<30} {:<15} {:<20} {:<12}", "ID", "Name", "Trainer", "Time", "Status");
+                println!("\n{:<8} {:<25} {:<15} {:<20} {:<12}", "ID", "Class", "Trainer", "Class Time", "Status");
                 println!("{}", "-".repeat(87));
 
                 for class in filtered {
                     let trainer = class.trainer.as_deref().unwrap_or("-");
                     println!(
-                        "{:<8} {:<30} {:<15} {:<20} {:<12}",
+                        "{:<8} {:<25} {:<15} {:<20} {:<12}",
                         class.id,
-                        truncate(&class.name, 28),
+                        truncate(&class.name, 23),
                         truncate(trainer, 13),
                         class.start_time.format("%a %d %b %H:%M"),
                         class.status
@@ -174,16 +174,16 @@ async fn main() -> Result<()> {
             if filtered.is_empty() {
                 println!("\nNo upcoming unbookable classes found.");
             } else {
-                println!("\n{:<8} {:<30} {:<15} {:<20} {:<20}", "ID", "Name", "Trainer", "Time", "Window Opens");
+                println!("\n{:<8} {:<25} {:<15} {:<20} {:<20}", "ID", "Class", "Trainer", "Class Time", "Window Opens");
                 println!("{}", "-".repeat(95));
 
                 for class in filtered {
                     let trainer = class.trainer.as_deref().unwrap_or("-");
                     let window_opens = class.start_time - booking_window;
                     println!(
-                        "{:<8} {:<30} {:<15} {:<20} {:<20}",
+                        "{:<8} {:<25} {:<15} {:<20} {:<20}",
                         class.id,
-                        truncate(&class.name, 28),
+                        truncate(&class.name, 23),
                         truncate(trainer, 13),
                         class.start_time.format("%a %d %b %H:%M"),
                         window_opens.format("%a %d %b %H:%M")
@@ -205,7 +205,7 @@ async fn main() -> Result<()> {
             if bookings.is_empty() {
                 println!("\nNo current bookings found.");
             } else {
-                println!("\n{:<8} {:<30} {:<15} {:<20} {:<12} {:<10}", "ID", "Name", "Trainer", "Time", "Status", "Waitlist");
+                println!("\n{:<8} {:<25} {:<15} {:<20} {:<12} {:<10}", "ID", "Class", "Trainer", "Class Time", "Status", "Waitlist");
                 println!("{}", "-".repeat(97));
 
                 for booking in bookings {
@@ -215,9 +215,9 @@ async fn main() -> Result<()> {
                     };
                     let trainer = booking.trainer.as_deref().unwrap_or("-");
                     println!(
-                        "{:<8} {:<30} {:<15} {:<20} {:<12} {:<10}",
+                        "{:<8} {:<25} {:<15} {:<20} {:<12} {:<10}",
                         booking.id,
-                        truncate(&booking.name, 28),
+                        truncate(&booking.name, 23),
                         truncate(trainer, 13),
                         booking.start_time.format("%a %d %b %H:%M"),
                         booking.status,
@@ -277,7 +277,7 @@ async fn main() -> Result<()> {
             if pending.is_empty() {
                 println!("\nNo pending snipes in queue.");
             } else {
-                println!("\n{:<8} {:<25} {:<12} {:<18} {:<18}", "ID", "Name", "Trainer", "Class Time", "Window Opens");
+                println!("\n{:<8} {:<25} {:<12} {:<18} {:<18}", "ID", "Class", "Trainer", "Class Time", "Window Opens");
                 println!("{}", "-".repeat(83));
 
                 for snipe in pending {
@@ -300,7 +300,7 @@ async fn main() -> Result<()> {
 
             if !non_pending.is_empty() {
                 println!("\nRecent completed/failed:");
-                println!("{:<8} {:<25} {:<18} {:<10}", "ID", "Name", "Class Time", "Status");
+                println!("{:<8} {:<25} {:<18} {:<10}", "ID", "Class", "Class Time", "Status");
                 println!("{}", "-".repeat(63));
 
                 for snipe in non_pending {
