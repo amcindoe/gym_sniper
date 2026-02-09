@@ -121,22 +121,17 @@ impl SnipeQueue {
         pending
     }
 
-    /// Mark a snipe as completed
+    /// Mark a snipe as completed and remove from queue
     pub fn mark_completed(&mut self, class_id: u64) -> Result<()> {
-        if let Some(entry) = self.snipes.iter_mut().find(|s| s.class_id == class_id) {
-            entry.status = SnipeStatus::Completed;
-            self.save()?;
-        }
+        self.snipes.retain(|s| s.class_id != class_id);
+        self.save()?;
         Ok(())
     }
 
-    /// Mark a snipe as failed with error message
-    pub fn mark_failed(&mut self, class_id: u64, error: &str) -> Result<()> {
-        if let Some(entry) = self.snipes.iter_mut().find(|s| s.class_id == class_id) {
-            entry.status = SnipeStatus::Failed;
-            entry.error_message = Some(error.to_string());
-            self.save()?;
-        }
+    /// Mark a snipe as failed and remove from queue
+    pub fn mark_failed(&mut self, class_id: u64, _error: &str) -> Result<()> {
+        self.snipes.retain(|s| s.class_id != class_id);
+        self.save()?;
         Ok(())
     }
 
