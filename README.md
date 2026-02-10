@@ -327,6 +327,8 @@ Name=The Laboratory - Classes
 Comment=Book gym classes on Perfect Gym
 Exec=/path/to/gym_sniper/target/release/gym_sniper_gui
 Path=/path/to/gym_sniper
+Icon=/path/to/gym_sniper/icon.svg
+StartupWMClass=gym-sniper
 Terminal=false
 Categories=Utility;
 ```
