@@ -316,6 +316,29 @@ The GUI fetches data directly from the Perfect Gym API. It automatically re-auth
 nohup ./target/release/gym_sniper snipe-daemon > snipe_daemon.log 2>&1 &
 ```
 
+### Desktop Entry (Linux)
+
+To launch the GUI from your application menu instead of a terminal, create `~/.local/share/applications/gym-sniper.desktop`:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=The Laboratory - Classes
+Comment=Book gym classes on Perfect Gym
+Exec=/path/to/gym_sniper/target/release/gym_sniper_gui
+Path=/path/to/gym_sniper
+Terminal=false
+Categories=Utility;
+```
+
+Then update the desktop database:
+
+```bash
+update-desktop-database ~/.local/share/applications/
+```
+
+The app will appear in your application launcher and can be pinned to your dock/favourites. The `Path` must point to the directory containing `config.toml`.
+
 ## Running as a Service
 
 To run the scheduler continuously in the background:
