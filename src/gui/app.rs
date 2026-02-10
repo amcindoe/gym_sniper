@@ -1,4 +1,5 @@
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::time::Instant;
 
 use eframe::egui;
 
@@ -22,6 +23,7 @@ pub struct GymSniperApp {
     loading: bool,
     status_message: Option<(String, bool)>, // (message, is_error)
     message_timer: f32,
+    last_snipe_refresh: Instant,
 }
 
 impl GymSniperApp {
@@ -49,6 +51,7 @@ impl GymSniperApp {
             loading: false,
             status_message: None,
             message_timer: 0.0,
+            last_snipe_refresh: Instant::now(),
         }
     }
 
@@ -84,6 +87,13 @@ impl eframe::App for GymSniperApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Process any pending responses
         self.process_responses();
+
+        // Periodically refresh snipe queue to pick up daemon changes
+        if self.last_snipe_refresh.elapsed() >= std::time::Duration::from_secs(30) {
+            self.last_snipe_refresh = Instant::now();
+            let _ = self.cmd_tx.send(Command::RefreshSnipeQueue);
+        }
+        ctx.request_repaint_after(std::time::Duration::from_secs(30));
 
         // Update message timer
         if self.message_timer > 0.0 {
