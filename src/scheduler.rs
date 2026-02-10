@@ -1,4 +1,4 @@
-use chrono::{Datelike, Duration, Local};
+use chrono::{Datelike, Local};
 use tokio::time::sleep;
 use tracing::{error, info};
 
@@ -6,11 +6,11 @@ use crate::api::PerfectGymClient;
 use crate::config::Config;
 use crate::email;
 use crate::error::Result;
-use crate::util::weekday_matches;
+use crate::util::{booking_window, weekday_matches};
 
 /// Run the scheduler to auto-book configured classes
 pub async fn run_scheduler(config: Config, client: PerfectGymClient) -> Result<()> {
-    let client = client.login().await?;
+    client.login().await?;
 
     loop {
         let now = Local::now();
@@ -23,7 +23,7 @@ pub async fn run_scheduler(config: Config, client: PerfectGymClient) -> Result<(
             // Find matching classes
             for class in &classes {
                 let class_time = class.start_time;
-                let booking_opens = class_time - Duration::days(7) - Duration::hours(2);
+                let booking_opens = class_time - booking_window();
 
                 // Check if this class matches our target
                 let day_matches = target.days.as_ref().map_or(true, |days| {

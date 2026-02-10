@@ -278,7 +278,7 @@ tail -f snipe_daemon.log
 The daemon:
 1. Monitors the snipe queue continuously
 2. Executes snipes when booking windows approach
-3. Marks snipes as completed or failed
+3. Removes snipes from the queue after completion or failure
 4. Cleans up old entries after 7 days
 
 **Note:** Only run one daemon instance at a time to avoid duplicate booking attempts.
@@ -462,16 +462,18 @@ src/
 ├── scheduler.rs     # Auto-booking scheduler
 ├── snipe.rs         # Snipe logic and booking attempts
 ├── snipe_queue.rs   # Snipe queue management
-├── util.rs          # Helper functions
+├── util.rs          # Helper functions (formatting, booking window, etc.)
 └── gui/
     ├── mod.rs       # GUI module root
     ├── app.rs       # Main GUI application
-    ├── async_bridge.rs  # Async communication layer
+    ├── async_bridge.rs  # Async communication layer (with auth-retry)
     └── views/
         ├── mod.rs
         ├── bookings.rs      # Confirmed bookings view
         ├── snipe_queue.rs   # Snipe queue view
         └── search.rs        # Class search view
+tests/
+└── api_integration.rs   # Integration tests (wiremock-based)
 ```
 
 ## Security Note

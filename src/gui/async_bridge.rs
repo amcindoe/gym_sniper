@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::mpsc::{Receiver, Sender};
 
 use eframe::egui;
@@ -6,6 +7,7 @@ use tokio::runtime::Runtime;
 use crate::api::{ClassInfo, MyBooking, PerfectGymClient};
 use crate::config::Config;
 use crate::snipe_queue::{SnipeEntry, SnipeQueue, SnipeStatus};
+use crate::util::booking_window;
 
 /// Commands sent from GUI to async thread
 #[derive(Debug)]
@@ -58,8 +60,8 @@ impl ClientManager {
 
     /// Force a fresh login
     async fn login(&mut self) -> Result<(), String> {
-        let client = PerfectGymClient::new(&self.config)
-            .login()
+        let client = PerfectGymClient::new(&self.config);
+        client.login()
             .await
             .map_err(|e| format!("Login failed: {}", e))?;
         self.client = Some(client);
@@ -69,6 +71,25 @@ impl ClientManager {
     /// Invalidate the current client (call after auth errors)
     fn invalidate(&mut self) {
         self.client = None;
+    }
+
+    /// Execute an API call with automatic auth-retry on failure.
+    /// Clones the client so the async block can own it without lifetime issues.
+    async fn with_retry<T, F, Fut>(&mut self, f: F) -> Result<T, String>
+    where
+        F: Fn(PerfectGymClient) -> Fut,
+        Fut: Future<Output = Result<T, String>>,
+    {
+        let client = self.get_client().await?.clone();
+        match f(client).await {
+            Ok(val) => Ok(val),
+            Err(e) if is_auth_error(&e) => {
+                self.invalidate();
+                let client = self.get_client().await?.clone();
+                f(client).await
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -107,46 +128,16 @@ pub fn run_async_bridge(
 
                         match cmd {
                             Command::RefreshBookings => {
-                                // Try to get bookings
-                                let result = async {
-                                    let client = manager.get_client().await?;
-                                    client.get_my_bookings().await.map_err(|e| e.to_string())
-                                }.await;
-
-                                let should_retry = match &result {
-                                    Ok(bookings) if bookings.is_empty() => true, // Empty might mean expired token
-                                    Err(e) if is_auth_error(e) => true,
-                                    _ => false,
-                                };
-
-                                if should_retry {
-                                    // Token might be expired, force re-login and retry
-                                    manager.invalidate();
-                                    match manager.get_client().await {
-                                        Ok(client) => match client.get_my_bookings().await {
-                                            Ok(bookings) => {
-                                                let _ = resp_tx.send(Response::BookingsLoaded(bookings));
-                                            }
-                                            Err(e) => {
-                                                let _ = resp_tx.send(Response::OperationError(format!(
-                                                    "Failed to load bookings: {}", e
-                                                )));
-                                            }
-                                        },
-                                        Err(e) => {
-                                            let _ = resp_tx.send(Response::OperationError(e));
-                                        }
+                                match manager.with_retry(|c| async move {
+                                    c.get_my_bookings().await.map_err(|e| e.to_string())
+                                }).await {
+                                    Ok(bookings) => {
+                                        let _ = resp_tx.send(Response::BookingsLoaded(bookings));
                                     }
-                                } else {
-                                    match result {
-                                        Ok(bookings) => {
-                                            let _ = resp_tx.send(Response::BookingsLoaded(bookings));
-                                        }
-                                        Err(e) => {
-                                            let _ = resp_tx.send(Response::OperationError(format!(
-                                                "Failed to load bookings: {}", e
-                                            )));
-                                        }
+                                    Err(e) => {
+                                        let _ = resp_tx.send(Response::OperationError(format!(
+                                            "Failed to load bookings: {}", e
+                                        )));
                                     }
                                 }
                             }
@@ -177,32 +168,11 @@ pub fn run_async_bridge(
                             } => {
                                 let fetch_days = days_offset + 7;
 
-                                let result = async {
-                                    let client = manager.get_client().await?;
-                                    client.get_weekly_classes(fetch_days).await.map_err(|e| e.to_string())
-                                }.await;
+                                let classes = manager.with_retry(|c| async move {
+                                    c.get_weekly_classes(fetch_days).await.map_err(|e| e.to_string())
+                                }).await;
 
-                                let classes = match result {
-                                    Ok(classes) => Some(classes),
-                                    Err(e) if is_auth_error(&e) => {
-                                        manager.invalidate();
-                                        match manager.get_client().await {
-                                            Ok(client) => client.get_weekly_classes(fetch_days).await.ok(),
-                                            Err(e) => {
-                                                let _ = resp_tx.send(Response::OperationError(e));
-                                                None
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        let _ = resp_tx.send(Response::OperationError(format!(
-                                            "Search failed: {}", e
-                                        )));
-                                        None
-                                    }
-                                };
-
-                                if let Some(classes) = classes {
+                                if let Ok(classes) = classes {
                                     let now = chrono::Local::now();
                                     let target_date =
                                         (now + chrono::Duration::days(days_offset as i64))
@@ -246,18 +216,20 @@ pub fn run_async_bridge(
                                         .collect();
 
                                     let _ = resp_tx.send(Response::SearchResults(filtered));
+                                } else if let Err(e) = classes {
+                                    let _ = resp_tx.send(Response::OperationError(format!(
+                                        "Search failed: {}", e
+                                    )));
                                 }
                             }
                             Command::AddToSnipeQueue(class_info) => {
-                                let booking_window = class_info.start_time
-                                    - chrono::Duration::days(7)
-                                    - chrono::Duration::hours(2);
+                                let bw = class_info.start_time - booking_window();
 
                                 let entry = SnipeEntry {
                                     class_id: class_info.id,
                                     class_name: class_info.name.clone(),
                                     class_time: class_info.start_time,
-                                    booking_window,
+                                    booking_window: bw,
                                     trainer: class_info.trainer.clone(),
                                     added_at: chrono::Local::now(),
                                     status: SnipeStatus::Pending,
@@ -327,43 +299,15 @@ pub fn run_async_bridge(
                                 }
                             }
                             Command::CancelBooking(class_id) => {
-                                let result = async {
-                                    let client = manager.get_client().await?;
-                                    client.cancel_booking(class_id).await.map_err(|e| e.to_string())?;
-                                    client.get_my_bookings().await.map_err(|e| e.to_string())
-                                }.await;
-
-                                match result {
+                                match manager.with_retry(|c| async move {
+                                    c.cancel_booking(class_id).await.map_err(|e| e.to_string())?;
+                                    c.get_my_bookings().await.map_err(|e| e.to_string())
+                                }).await {
                                     Ok(bookings) => {
                                         let _ = resp_tx.send(Response::OperationSuccess(
                                             format!("Cancelled booking for class {}", class_id),
                                         ));
                                         let _ = resp_tx.send(Response::BookingsLoaded(bookings));
-                                    }
-                                    Err(e) if is_auth_error(&e) => {
-                                        manager.invalidate();
-                                        match manager.get_client().await {
-                                            Ok(client) => {
-                                                match client.cancel_booking(class_id).await {
-                                                    Ok(()) => {
-                                                        let _ = resp_tx.send(Response::OperationSuccess(
-                                                            format!("Cancelled booking for class {}", class_id),
-                                                        ));
-                                                        if let Ok(bookings) = client.get_my_bookings().await {
-                                                            let _ = resp_tx.send(Response::BookingsLoaded(bookings));
-                                                        }
-                                                    }
-                                                    Err(e) => {
-                                                        let _ = resp_tx.send(Response::OperationError(format!(
-                                                            "Failed to cancel booking: {}", e
-                                                        )));
-                                                    }
-                                                }
-                                            }
-                                            Err(e) => {
-                                                let _ = resp_tx.send(Response::OperationError(e));
-                                            }
-                                        }
                                     }
                                     Err(e) => {
                                         let _ = resp_tx.send(Response::OperationError(format!(

@@ -1,4 +1,5 @@
 use chrono::{Duration, Local};
+use crate::util::booking_window;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
@@ -14,7 +15,7 @@ pub async fn snipe_class(config: &Config, client: &PerfectGymClient, class_id: u
     // Get initial class details
     let booking = client.get_class_details(class_id).await?;
     let class_time = booking.start_time;
-    let booking_window_opens = class_time - Duration::days(7) - Duration::hours(2);
+    let booking_window_opens = class_time - booking_window();
 
     info!(
         "Target: {} at {}",
@@ -73,7 +74,8 @@ pub async fn snipe_class(config: &Config, client: &PerfectGymClient, class_id: u
 
     // Refresh token 1 minute before window
     info!("Refreshing login token...");
-    let _client = PerfectGymClient::new(config).login().await?;
+    let fresh_client = PerfectGymClient::new(config);
+    fresh_client.login().await?;
     info!("Token refreshed.");
 
     // Sleep until exactly when window opens
@@ -92,7 +94,8 @@ pub async fn snipe_class(config: &Config, client: &PerfectGymClient, class_id: u
 pub async fn attempt_booking(config: &Config, class_id: u64) -> Result<()> {
     // Login token should already be fresh from snipe_class
     // but refresh if this is called directly (e.g., from book command)
-    let client = PerfectGymClient::new(config).login().await?;
+    let client = PerfectGymClient::new(config);
+    client.login().await?;
 
     // Get class details for email notifications
     let class_details = client.get_class_details(class_id).await.ok();
@@ -233,12 +236,13 @@ pub async fn run_snipe_daemon(config: &Config) -> Result<()> {
         info!("Executing snipe for {} (class ID {})...", class_name, class_id);
 
         // Create fresh client for the snipe
-        let client = match PerfectGymClient::new(config).login().await {
-            Ok(c) => c,
+        let client = PerfectGymClient::new(config);
+        match client.login().await {
+            Ok(()) => {},
             Err(e) => {
                 error!("Failed to login for snipe: {}", e);
                 let mut queue = SnipeQueue::load()?;
-                queue.mark_failed(class_id, &format!("Login failed: {}", e))?;
+                queue.remove(class_id)?;
                 continue;
             }
         };
@@ -248,7 +252,7 @@ pub async fn run_snipe_daemon(config: &Config) -> Result<()> {
             Ok(()) => {
                 info!("Snipe successful for {}", class_name);
                 let mut queue = SnipeQueue::load()?;
-                queue.mark_completed(class_id)?;
+                queue.remove(class_id)?;
             }
             Err(e) => {
                 let err_str = format!("{}", e);
@@ -258,7 +262,7 @@ pub async fn run_snipe_daemon(config: &Config) -> Result<()> {
                     error!("Snipe failed for {}: {}", class_name, e);
                 }
                 let mut queue = SnipeQueue::load()?;
-                queue.mark_failed(class_id, &err_str)?;
+                queue.remove(class_id)?;
             }
         }
 

@@ -51,3 +51,72 @@ impl Config {
         Ok(config)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_minimal_config() {
+        let toml_str = r#"
+[gym]
+base_url = "https://example.com/clientportal2"
+club_id = 42
+
+[credentials]
+email = "user@example.com"
+password = "secret"
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.gym.club_id, 42);
+        assert_eq!(config.credentials.email, "user@example.com");
+        assert!(config.targets.is_empty());
+        assert!(config.email.is_none());
+    }
+
+    #[test]
+    fn parse_full_config() {
+        let toml_str = r#"
+[gym]
+base_url = "https://example.com/clientportal2"
+club_id = 42
+
+[credentials]
+email = "user@example.com"
+password = "secret"
+
+[[targets]]
+class_name = "Yoga"
+days = ["monday", "wed"]
+time = "09:00"
+
+[[targets]]
+class_name = "Spin"
+
+[email]
+smtp_server = "smtp.example.com"
+smtp_port = 587
+username = "user"
+password = "pass"
+from = "a@b.com"
+to = "c@d.com"
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.targets.len(), 2);
+        assert_eq!(config.targets[0].class_name, "Yoga");
+        assert_eq!(config.targets[0].days.as_ref().unwrap().len(), 2);
+        assert_eq!(config.targets[1].time, None);
+        assert!(config.email.is_some());
+        assert_eq!(config.email.unwrap().smtp_port, 587);
+    }
+
+    #[test]
+    fn parse_missing_required_fields() {
+        let toml_str = r#"
+[gym]
+base_url = "https://example.com"
+"#;
+        let result: std::result::Result<Config, _> = toml::from_str(toml_str);
+        assert!(result.is_err());
+    }
+}

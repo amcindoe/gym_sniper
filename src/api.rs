@@ -76,19 +76,19 @@ struct HourData {
 }
 
 #[derive(Debug, Deserialize)]
-struct ClassItem {
+pub(crate) struct ClassItem {
     #[serde(rename = "Id")]
-    id: u64,
+    pub(crate) id: u64,
     #[serde(rename = "Name")]
-    name: String,
+    pub(crate) name: String,
     #[serde(rename = "StartTime")]
-    start_time: String,
+    pub(crate) start_time: String,
     #[serde(rename = "Duration")]
-    duration: String,
+    pub(crate) duration: String,
     #[serde(rename = "Status")]
-    status: String,
+    pub(crate) status: String,
     #[serde(rename = "Trainer")]
-    trainer: Option<String>,
+    pub(crate) trainer: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -210,7 +210,7 @@ impl PerfectGymClient {
         }
     }
 
-    pub async fn login(self) -> Result<Self> {
+    pub async fn login(&self) -> Result<()> {
         let url = format!("{}/Auth/Login", self.config.gym.base_url);
 
         let request = LoginRequest {
@@ -268,7 +268,33 @@ impl PerfectGymClient {
 
         *self.token.write().await = token;
 
-        Ok(self)
+        Ok(())
+    }
+
+    /// Build an authenticated request with standard headers
+    fn build_request(&self, method: reqwest::Method, url: &str, token: &str) -> reqwest::RequestBuilder {
+        let origin = self.config.gym.base_url.replace("/clientportal2", "");
+        let referer = format!("{}/", self.config.gym.base_url);
+
+        self.client
+            .request(method, url)
+            .header(header::AUTHORIZATION, format!("Bearer {}", token))
+            .header(header::CONTENT_TYPE, "application/json;charset=utf-8")
+            .header(header::ACCEPT, "application/json, text/plain, */*")
+            .header(header::ORIGIN, origin)
+            .header(header::REFERER, referer)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("CP-LANG", "en")
+            .header("CP-MODE", "desktop")
+    }
+
+    /// Read the token from the RwLock, returning an error if not logged in
+    async fn get_token(&self) -> Result<String> {
+        self.token
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))
     }
 
     pub async fn get_weekly_classes(&self, days: u32) -> Result<Vec<ClassInfo>> {
@@ -283,25 +309,10 @@ impl PerfectGymClient {
             days_in_week: days,
         };
 
-        let token = self.token.read().await;
-        let token = token
-            .as_ref()
-            .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))?;
-
-        let origin = &self.config.gym.base_url.replace("/clientportal2", "");
-        let referer = format!("{}/", self.config.gym.base_url);
+        let token = self.get_token().await?;
 
         let response = self
-            .client
-            .post(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header(header::CONTENT_TYPE, "application/json;charset=utf-8")
-            .header(header::ACCEPT, "application/json, text/plain, */*")
-            .header(header::ORIGIN, origin)
-            .header(header::REFERER, &referer)
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("CP-LANG", "en")
-            .header("CP-MODE", "desktop")
+            .build_request(reqwest::Method::POST, &url, &token)
             .json(&request)
             .send()
             .await?;
@@ -345,25 +356,10 @@ impl PerfectGymClient {
             club_id: self.config.gym.club_id.to_string(),
         };
 
-        let token = self.token.read().await;
-        let token = token
-            .as_ref()
-            .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))?;
-
-        let origin = &self.config.gym.base_url.replace("/clientportal2", "");
-        let referer = format!("{}/", self.config.gym.base_url);
+        let token = self.get_token().await?;
 
         let response = self
-            .client
-            .post(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header(header::CONTENT_TYPE, "application/json;charset=utf-8")
-            .header(header::ACCEPT, "application/json, text/plain, */*")
-            .header(header::ORIGIN, origin)
-            .header(header::REFERER, &referer)
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("CP-LANG", "en")
-            .header("CP-MODE", "desktop")
+            .build_request(reqwest::Method::POST, &url, &token)
             .json(&request)
             .send()
             .await?;
@@ -385,11 +381,7 @@ impl PerfectGymClient {
             .next()
             .ok_or_else(|| GymSniperError::Api("No ticket in booking response".to_string()))?;
 
-        let start_time = NaiveDateTime::parse_from_str(&ticket.start_time, "%Y-%m-%dT%H:%M:%S")
-            .map_err(|e| GymSniperError::Api(format!("Failed to parse time: {}", e)))?
-            .and_local_timezone(Local)
-            .single()
-            .ok_or_else(|| GymSniperError::Api("Invalid timezone".to_string()))?;
+        let start_time = parse_local_datetime(&ticket.start_time)?;
 
         Ok(BookingResult {
             name: ticket.name,
@@ -404,24 +396,10 @@ impl PerfectGymClient {
             self.config.gym.base_url, class_id
         );
 
-        let token = self.token.read().await;
-        let token = token
-            .as_ref()
-            .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))?;
-
-        let origin = &self.config.gym.base_url.replace("/clientportal2", "");
-        let referer = format!("{}/", self.config.gym.base_url);
+        let token = self.get_token().await?;
 
         let response = self
-            .client
-            .get(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header(header::ACCEPT, "application/json, text/plain, */*")
-            .header(header::ORIGIN, origin)
-            .header(header::REFERER, &referer)
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("CP-LANG", "en")
-            .header("CP-MODE", "desktop")
+            .build_request(reqwest::Method::GET, &url, &token)
             .send()
             .await?;
 
@@ -434,11 +412,7 @@ impl PerfectGymClient {
 
         let details: ClassDetailsResponse = response.json().await?;
 
-        let start_time = NaiveDateTime::parse_from_str(&details.start_time, "%Y-%m-%dT%H:%M:%S")
-            .map_err(|e| GymSniperError::Api(format!("Failed to parse time: {}", e)))?
-            .and_local_timezone(Local)
-            .single()
-            .ok_or_else(|| GymSniperError::Api("Invalid timezone".to_string()))?;
+        let start_time = parse_local_datetime(&details.start_time)?;
 
         // Find current user's waitlist position
         let waitlist_position = details
@@ -493,25 +467,10 @@ impl PerfectGymClient {
 
         let request = CancelBookingRequest { class_id };
 
-        let token = self.token.read().await;
-        let token = token
-            .as_ref()
-            .ok_or_else(|| GymSniperError::Auth("Not logged in".to_string()))?;
-
-        let origin = &self.config.gym.base_url.replace("/clientportal2", "");
-        let referer = format!("{}/", self.config.gym.base_url);
+        let token = self.get_token().await?;
 
         let response = self
-            .client
-            .post(&url)
-            .header(header::AUTHORIZATION, format!("Bearer {}", token))
-            .header(header::CONTENT_TYPE, "application/json;charset=utf-8")
-            .header(header::ACCEPT, "application/json, text/plain, */*")
-            .header(header::ORIGIN, origin)
-            .header(header::REFERER, &referer)
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("CP-LANG", "en")
-            .header("CP-MODE", "desktop")
+            .build_request(reqwest::Method::POST, &url, &token)
             .json(&request)
             .send()
             .await?;
@@ -529,12 +488,16 @@ impl PerfectGymClient {
     }
 }
 
-fn parse_class_item(item: ClassItem) -> Result<ClassInfo> {
-    let start_time = NaiveDateTime::parse_from_str(&item.start_time, "%Y-%m-%dT%H:%M:%S")
-        .map_err(|e| GymSniperError::Api(format!("Failed to parse start time: {}", e)))?
+fn parse_local_datetime(s: &str) -> Result<DateTime<Local>> {
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
+        .map_err(|e| GymSniperError::Api(format!("Failed to parse datetime: {}", e)))?
         .and_local_timezone(Local)
         .single()
-        .ok_or_else(|| GymSniperError::Api("Invalid timezone for start".to_string()))?;
+        .ok_or_else(|| GymSniperError::Api("Invalid timezone".to_string()))
+}
+
+pub(crate) fn parse_class_item(item: ClassItem) -> Result<ClassInfo> {
+    let start_time = parse_local_datetime(&item.start_time)?;
 
     Ok(ClassInfo {
         id: item.id,
@@ -543,4 +506,58 @@ fn parse_class_item(item: ClassItem) -> Result<ClassInfo> {
         status: item.status,
         trainer: item.trainer,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_class_item_valid() {
+        let item = ClassItem {
+            id: 12345,
+            name: "Yoga Flow".to_string(),
+            start_time: "2025-01-15T09:30:00".to_string(),
+            duration: "60".to_string(),
+            status: "Bookable".to_string(),
+            trainer: Some("Jane Doe".to_string()),
+        };
+
+        let result = parse_class_item(item).unwrap();
+        assert_eq!(result.id, 12345);
+        assert_eq!(result.name, "Yoga Flow");
+        assert_eq!(result.status, "Bookable");
+        assert_eq!(result.trainer, Some("Jane Doe".to_string()));
+        assert_eq!(result.start_time.format("%Y-%m-%d %H:%M").to_string(), "2025-01-15 09:30");
+    }
+
+    #[test]
+    fn parse_class_item_no_trainer() {
+        let item = ClassItem {
+            id: 99,
+            name: "Spin".to_string(),
+            start_time: "2025-03-01T18:00:00".to_string(),
+            duration: "45".to_string(),
+            status: "Full".to_string(),
+            trainer: None,
+        };
+
+        let result = parse_class_item(item).unwrap();
+        assert_eq!(result.trainer, None);
+    }
+
+    #[test]
+    fn parse_class_item_invalid_datetime() {
+        let item = ClassItem {
+            id: 1,
+            name: "Bad".to_string(),
+            start_time: "not-a-date".to_string(),
+            duration: "30".to_string(),
+            status: "Bookable".to_string(),
+            trainer: None,
+        };
+
+        let result = parse_class_item(item);
+        assert!(result.is_err());
+    }
 }

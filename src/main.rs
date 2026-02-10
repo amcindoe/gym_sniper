@@ -7,7 +7,7 @@ use gym_sniper::error::Result;
 use gym_sniper::scheduler;
 use gym_sniper::snipe;
 use gym_sniper::snipe_queue::{SnipeEntry, SnipeQueue, SnipeStatus};
-use gym_sniper::util::truncate;
+use gym_sniper::util::{booking_window, truncate};
 
 #[derive(Parser)]
 #[command(name = "gym_sniper")]
@@ -97,7 +97,7 @@ async fn main() -> Result<()> {
         }
         Commands::List { days } => {
             info!("Fetching classes for next {} days...", days);
-            let client = client.login().await?;
+            client.login().await?;
             let classes = client.get_weekly_classes(days).await?;
 
             println!("\n{:<8} {:<25} {:<15} {:<20} {:<12}", "ID", "Class", "Trainer", "Class Time", "Status");
@@ -117,7 +117,7 @@ async fn main() -> Result<()> {
         }
         Commands::Trainer { name, days } => {
             info!("Searching for trainer '{}' in next {} days...", name, days);
-            let client = client.login().await?;
+            client.login().await?;
             let classes = client.get_weekly_classes(days).await?;
 
             let search = name.to_lowercase();
@@ -153,20 +153,19 @@ async fn main() -> Result<()> {
         Commands::Upcoming { days } => {
             let days = days.min(21); // Cap at 21 days
             info!("Fetching upcoming classes (not yet bookable) for next {} days...", days);
-            let client = client.login().await?;
+            client.login().await?;
 
             // Need to fetch 7 days ahead of requested range since booking window is 7d+2h before class
             let fetch_days = days + 8;
             let classes = client.get_weekly_classes(fetch_days).await?;
 
             let now = chrono::Local::now();
-            let booking_window = chrono::Duration::days(7) + chrono::Duration::hours(2);
 
             // Filter to classes where booking window hasn't opened yet
             let filtered: Vec<_> = classes
                 .into_iter()
                 .filter(|c| {
-                    let window_opens = c.start_time - booking_window;
+                    let window_opens = c.start_time - booking_window();
                     window_opens > now
                 })
                 .collect();
@@ -179,7 +178,7 @@ async fn main() -> Result<()> {
 
                 for class in filtered {
                     let trainer = class.trainer.as_deref().unwrap_or("-");
-                    let window_opens = class.start_time - booking_window;
+                    let window_opens = class.start_time - booking_window();
                     println!(
                         "{:<8} {:<25} {:<15} {:<20} {:<20}",
                         class.id,
@@ -193,13 +192,13 @@ async fn main() -> Result<()> {
         }
         Commands::Book { class_id } => {
             info!("Booking class {}...", class_id);
-            let client = client.login().await?;
+            client.login().await?;
             let result = client.book_class(class_id).await?;
             info!("Booked: {} at {}", result.name, result.start_time);
         }
         Commands::Bookings => {
             info!("Fetching your bookings...");
-            let client = client.login().await?;
+            client.login().await?;
             let bookings = client.get_my_bookings().await?;
 
             if bookings.is_empty() {
@@ -228,24 +227,22 @@ async fn main() -> Result<()> {
         }
         Commands::Snipe { class_id } => {
             info!("Sniping class {}...", class_id);
-            let client = client.login().await?;
+            client.login().await?;
             snipe::snipe_class(&config, &client, class_id).await?;
         }
         Commands::SnipeAdd { class_id } => {
             info!("Adding class {} to snipe queue...", class_id);
-            let client = client.login().await?;
+            client.login().await?;
 
             // Get class details
             let details = client.get_class_details(class_id).await?;
-            let booking_window = details.start_time
-                - chrono::Duration::days(7)
-                - chrono::Duration::hours(2);
+            let bw = details.start_time - booking_window();
 
             let entry = SnipeEntry {
                 class_id,
                 class_name: details.name.clone(),
                 class_time: details.start_time,
-                booking_window,
+                booking_window: bw,
                 trainer: details.trainer.clone(),
                 added_at: chrono::Local::now(),
                 status: SnipeStatus::Pending,
@@ -259,7 +256,7 @@ async fn main() -> Result<()> {
                 "Added to snipe queue: {} at {} (window opens {})",
                 details.name,
                 details.start_time.format("%a %d %b %H:%M"),
-                booking_window.format("%a %d %b %H:%M")
+                bw.format("%a %d %b %H:%M")
             );
         }
         Commands::SnipeRemove { class_id } => {
