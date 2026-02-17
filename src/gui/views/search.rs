@@ -29,8 +29,8 @@ impl SearchView {
         ui.horizontal(|ui| {
             ui.label("Day:");
 
-            // Create day options (Today+7 to Today+14)
-            let day_options: Vec<(u32, String)> = (7..=14)
+            // Create day options (Today+7 to Today+21)
+            let day_options: Vec<(u32, String)> = (7..=21)
                 .map(|offset| {
                     let date = chrono::Local::now() + chrono::Duration::days(offset as i64);
                     (offset, date.format("%a %d %b").to_string())
